@@ -15,7 +15,7 @@ if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/Documents/247-cfe/scripts")
+        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('summarise_offtake', palette='p1',
                                    zone='DE', year='2030',  participation='10',
@@ -429,7 +429,7 @@ def calculate_costs(n, label, costs):
 def calculate_price_duration(n,label, price_duration):
     zone = snakemake.wildcards.zone
     area = snakemake.config['area']
-    node = geoscope(zone, area)['node']
+    node = geoscope(n, zone, area)['node']
     price_duration = price_duration.reindex(columns=price_duration.columns.union(label))
     price_duration = price_duration.reindex(index=price_duration.index.union(n.buses_t.marginal_price.index))
     price_duration.loc[:,label] = n.buses_t.marginal_price[node].values
@@ -447,7 +447,7 @@ def calculate_hydrogen_cost(n, label, h2_cost):
     participation = snakemake.wildcards.participation
     zone = snakemake.wildcards.zone
     area = snakemake.config['area']
-    node = geoscope(zone, area)['node']
+    node = geoscope(n, zone, area)['node']
     weight = n.snapshot_weightings.generators
     price = n.buses_t.marginal_price.loc[:, node].mul(weight)
     # import costs
@@ -482,7 +482,7 @@ def calculate_emission_rate(n, label, emission_rate, attr_emissions):
     zone = snakemake.wildcards.zone
     area = snakemake.config['area']
     name = snakemake.config['ci']['name']
-    country = geoscope(zone, area)['node']
+    country = geoscope(n, zone, area)['node']
     grid_clean_techs = snakemake.config['global']['grid_clean_techs']
     emitters = snakemake.config['global']['emitters']
 

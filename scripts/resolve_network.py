@@ -6,8 +6,6 @@ from pypsa.linopt import get_var, linexpr, join_exprs, define_constraints
 import logging
 logger = logging.getLogger(__name__)
 
-import sys
-
 # Suppress logging of the slack bus choices
 pypsa.pf.logger.setLevel(logging.WARNING)
 
@@ -16,19 +14,9 @@ from vresutils.benchmark import memory_logger
 
 from _helpers import override_component_attrs
 
-from solve_network import geoscope
+from solve_network import geoscope, freeze_capacities, add_battery_constraints
 
 
-
-def freeze_capacities(n):
-
-    for name, attr in [("generators","p"),("links","p"),("stores","e")]:
-        df = getattr(n,name)
-        df[attr + "_nom_extendable"] = False
-        df[attr + "_nom"] = df[attr + "_nom_opt"]
-
-    #allow more emissions
-    n.stores.at["co2 atmosphere","e_nom"] *=2
 
 def add_H2(n):
 
@@ -166,7 +154,7 @@ def add_H2(n):
 def add_dummies(n):
     elec_buses = n.buses.index[n.buses.carrier == "AC"]
 
-    print("adding dummies to",elec_buses)
+    logger.info("adding dummies to",elec_buses)
     n.madd("Generator",
             elec_buses + " dummy",
             bus=elec_buses,
@@ -175,22 +163,7 @@ def add_dummies(n):
             marginal_cost=1e6)
 
 
-solver_name = "gurobi"
-
-solver_options = {"method" : 2,
-                  # "crossover" : 0,
-                  "BarConvTol": 1.e-5}
-def solve(policy):
-
-    n = pypsa.Network(snakemake.input.base_network,
-                      override_component_attrs=override_component_attrs())
-
-    freeze_capacities(n)
-
-    add_H2(n)
-
-    add_dummies(n)
-
+def solve(policy, n):
 
     def res_constraints(n):
 
@@ -260,40 +233,24 @@ def solve(policy):
 
         con = define_constraints(n, lhs, '<=', 0., 'RESconstraints','REStarget')
 
-    def add_battery_constraints(n):
-
-        chargers_b = n.links.carrier.str.contains("battery charger")
-        chargers = n.links.index[chargers_b & n.links.p_nom_extendable]
-        dischargers = chargers.str.replace("charger", "discharger")
-
-        if chargers.empty or ('Link', 'p_nom') not in n.variables.index:
-            return
-
-        link_p_nom = get_var(n, "Link", "p_nom")
-
-        lhs = linexpr((1,link_p_nom[chargers]),
-                      (-n.links.loc[dischargers, "efficiency"].values,
-                       link_p_nom[dischargers].values))
-
-        define_constraints(n, lhs, "=", 0, 'Link', 'charger_ratio')
-
     def extra_functionality(n, snapshots):
 
         add_battery_constraints(n)
 
         if "res" in policy:
-            print("setting annual RES target")
+            logger.info("setting annual RES target")
             res_constraints(n)
         if "monthly" in policy:
-            print("setting monthly RES target")
+            logger.info("setting monthly RES target")
             monthly_constraints(n)
         elif "exl" in policy:
-            print("setting excess limit on hourly matching")
+            logger.info("setting excess limit on hourly matching")
             excess_constraints(n)
 
     fn = getattr(snakemake.log, 'memory', None)
 
-
+    solver_options = snakemake.config["solving"]["solver"]
+    solver_name = solver_options["name"]
     result, message = n.lopf(pyomo=False,
            extra_functionality=extra_functionality,
            solver_name=solver_name,
@@ -301,13 +258,12 @@ def solve(policy):
            solver_logfile=snakemake.log.solver)
 
     # if result != "ok" or message != "optimal":
-    #     print(f"solver ended with {result} and {message}, so quitting")
+    #     logger.info(f"solver ended with {result} and {message}, so quitting")
     #     sys.exit()
 
 
 
     return n
-
 
 
 #%%
@@ -317,7 +273,6 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
                                 policy="monthly", palette='p1', zone='DE', year='2025',
-                                participation='10',
                                 res_share="p0",
                                 offtake_volume="2000",
                                 storage="nostore")
@@ -325,36 +280,36 @@ if __name__ == "__main__":
     logging.basicConfig(filename=snakemake.log.python,
                     level=snakemake.config['logging_level'])
 
+    n = pypsa.Network(snakemake.input.base_network,
+                      override_component_attrs=override_component_attrs())
+
 
     policy = snakemake.wildcards.policy
-    print(f"solving network for policy: {policy}")
+    logger.info(f"solving network for policy: {policy}")
 
     name = snakemake.config['ci']['name']
 
-    participation = snakemake.wildcards.participation
-    print(f"solving with participation: {participation}")
-
     zone = snakemake.wildcards.zone
-    print(f"solving network for bidding zone: {zone}")
+    logger.info(f"solving network for bidding zone: {zone}")
 
     year = snakemake.wildcards.year
-    print(f"solving network year: {year}")
+    logger.info(f"solving network year: {year}")
 
     area = snakemake.config['area']
-    print(f"solving with geoscope: {area}")
+    logger.info(f"solving with geoscope: {area}")
 
-    node = geoscope(zone, area)['node']
-    print(f"solving with node: {node}")
+    node = geoscope(n, zone, area)['node']
+    logger.info(f"solving with node: {node}")
 
-    ci_load = snakemake.config['ci_load'][f'{zone}']
-    load = ci_load * float(participation)/100  #C&I baseload MW
+    freeze_capacities(n)
 
-    print(f"solving with load: {load}")
+    add_H2(n)
 
+    add_dummies(n)
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
-        n = solve(policy)
+        n = solve(policy, n)
         n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))

@@ -8,11 +8,6 @@ RDIR = os.path.join(config['results_dir'], config['run'])
 CDIR = config['costs_dir']
 
 
-rule summarise_all_networks:
-    input:
-        expand(RDIR + "/summaries/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.yaml", **config['scenario'])
-
-
 rule solve_all_networks:
     input:
         expand(RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc", **config['scenario'])
