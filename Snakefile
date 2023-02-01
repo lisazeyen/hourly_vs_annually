@@ -15,17 +15,8 @@ rule solve_all_networks:
 
 rule summarise_all_offtake:
     input:
-        expand(RDIR + "/csvs/{year}/{zone}/{palette}/emissions.csv", **config["scenario"])
-rule merge_plots:
-    input:
-        used=RDIR + "/plots/{year}/{zone}/{palette}/used.pdf",
-        config=RDIR + '/configs/config.yaml'
-    output:
-        final=RDIR + "/plots/{year}/{zone}/{palette}/SUMMARY.pdf"
-    threads: 2
-    resources: mem_mb=2000
-    script:
-        'scripts/merge_plots.py'
+        expand(RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_emissions.csv", **config["scenario"])
+
 
 
 rule solve_base_network:
@@ -61,29 +52,37 @@ rule resolve_network:
 
 rule summarise_offtake:
     input:
-        networks=expand(RDIR + "/networks/{{participation}}/{{year}}/{{zone}}/{{palette}}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc",
-        policy=config["scenario"]["policy"], res_share=config["scenario"]["res_share"],
-        offtake_volume=config["scenario"]["offtake_volume"],storage=config["scenario"]["storage"])
+        network=RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc",
     output:
-        csvs_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/emissions.csv",
-        csvs_cf=RDIR + "/csvs/{year}/{zone}/{palette}/cf.csv",
-        csvs_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/supply_energy.csv",
-        csvs_nodal_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/nodal_supply_energy.csv",
-        csvs_nodal_capacities=RDIR + "/csvs/{year}/{zone}/{palette}/nodal_capacities.csv",
-        csvs_weighted_prices=RDIR + "/csvs/{year}/{zone}/{palette}/weighted_prices.csv",
-        csvs_curtailment=RDIR + "/csvs/{year}/{zone}/{palette}/curtailment.csv",
-        csvs_costs=RDIR + "/csvs/{year}/{zone}/{palette}/costs.csv",
-        csvs_nodal_costs=RDIR + "/csvs/{year}/{zone}/{palette}/nodal_costs.csv",
-        csvs_h2_costs=RDIR + "/csvs/{year}/{zone}/{palette}/h2_costs.csv",
-        csvs_emission_rate=RDIR + "/csvs/{year}/{zone}/{palette}/emission_rate.csv",
-        csvs_h2_gen_mix=RDIR + "/csvs/{year}/{zone}/{palette}/h2_gen_mix.csv",
-        csvs_attr_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/attr_emissions.csv",
-        csvs_price_duration=RDIR + "/csvs/{year}/{zone}/{palette}/price_duration.csv",
-        # cf_plot = RDIR + "/graphs/{year}/{zone}/{palette}/cf_electrolysis.pdf",
-
+        csvs_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_emissions.csv",
+        csvs_cf=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_cf.csv",
+        csvs_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_supply_energy.csv",
+        csvs_nodal_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_nodal_supply_energy.csv",
+        csvs_nodal_capacities=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_nodal_capacities.csv",
+        csvs_weighted_prices=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_weighted_prices.csv",
+        csvs_curtailment=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_curtailment.csv",
+        csvs_costs=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_costs.csv",
+        csvs_nodal_costs=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_nodal_costs.csv",
+        csvs_h2_costs=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_h2_costs.csv",
+        csvs_emission_rate=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_emission_rate.csv",
+        csvs_h2_gen_mix=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_h2_gen_mix.csv",
+        csvs_attr_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_attr_emissions.csv",
+        csvs_price_duration=RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_price_duration.csv",
     threads: 2
     resources: mem=2000
     script: "scripts/summarise_offtake.py"
+
+rule plot_offtake:
+    input:
+        csvs=expand(RDIR + "/csvs/{{year}}/{{zone}}/{{palette}}/{policy}_{res_share}_{offtake_volume}volume_{storage}_emissions.csv",
+        policy=config["scenario"]["policy"], res_share=config["scenario"]["res_share"],
+        offtake_volume=config["scenario"]["offtake_volume"],storage=config["scenario"]["storage"])
+    output:
+        cf_plot = RDIR + "/graphs/{year}/{zone}/{palette}/cf_electrolysis.pdf",
+
+    threads: 2
+    resources: mem=2000
+    script: "scripts/plot_offtake.py"
 
 
 rule copy_config:
