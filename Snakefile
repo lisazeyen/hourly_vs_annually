@@ -17,7 +17,9 @@ rule summarise_all_offtake:
     input:
         expand(RDIR + "/csvs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_emissions.csv", **config["scenario"])
 
-
+rule plot_all:
+    input:
+        expand(RDIR + "/graphs/{year}/{zone}/{palette}/cf_electrolysis.pdf", **config["scenario"])
 
 rule solve_base_network:
     input:
