@@ -180,13 +180,21 @@ def solve(policy, n):
 
         electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
+        load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+
+        lhs = res + "\n" + load
+        print(res_gens, electrolysis)
+
+        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+
         allowed_excess = float(policy.replace("res","").replace("p","."))
         load = join_exprs(linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis)))
 
         lhs = res + "\n" + load
         print(res_gens, electrolysis)
 
-        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess',
+                                 'REStarget_excess')
 
 
     def monthly_constraints(n):
@@ -214,7 +222,7 @@ def solve(policy, n):
         for i in range(len(res.index)):
             lhs = res.iloc[i] + "\n" + load.iloc[i]
 
-            con = define_constraints(n, lhs, '>=', 0., f'RESconstraints_{i}',f'REStarget_{i}')
+            con = define_constraints(n, lhs, '==', 0., f'RESconstraints_{i}',f'REStarget_{i}')
 
     def excess_constraints(n):
 
@@ -227,13 +235,19 @@ def solve(policy, n):
 
         electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
+        load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+
+        lhs = res + "\n" + load
+
+        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+
         allowed_excess = float(policy.replace("exl","").replace("p","."))
 
         load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
 
         lhs = res + "\n" + load
 
-        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess','REStarget_excess')
 
     def extra_functionality(n, snapshots):
 
@@ -274,7 +288,8 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="offgrid, palette='p1', zone='DE', year='2025',
+                                policy="res1p0", palette='p1', zone='DE',
+                                year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
                                 storage="nostore")
