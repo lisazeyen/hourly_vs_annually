@@ -347,11 +347,20 @@ def solve_network(n, tech_palette):
 
             # add for ct in zone electrolysis demand to load
             if (ct==zone) and snakemake.config["scenario"]["h2_demand_included"]:
+
                 logger.info("Consider electrolysis demand for RES target.")
                 # H2 demand in zone
                 offtake_volume = float(snakemake.wildcards.offtake_volume)
                 # efficiency of electrolysis
                 efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+                if snakemake.config["scenario"]["h2_demand_added"]:
+                    logger.info("Add electrolysis demand.")
+                    load_elec = offtake_volume/efficiency
+                    n.add("Load",
+                          f"{geoscope(n,zone, area)['node']} electrolysis demand",
+                          bus=geoscope(n,zone, area)['node'],
+                          p_set=load_elec,
+                          carrier="electricity")
                 # electricity demand of electrolysis
                 demand_electrolysis = (offtake_volume/efficiency
                                        *n.snapshot_weightings.generators).sum()
@@ -407,7 +416,7 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('solve_base_network',
                                 policy="ref", palette='p1', zone='DE', year='2025',
-                                res_share="p10",
+                                res_share="p0",
                                 offtake_volume="3200")
 
     logging.basicConfig(filename=snakemake.log.python,

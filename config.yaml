@@ -33,7 +33,10 @@ scenario:
   # if res target should include demand of electrolysis in zone
   # if true res_target*(elec load + electrolysis demand) = res generation
   # if false res_target*elec load = res generation
-  h2_demand_included: True
+  h2_demand_included: True 
+  h2_demand_added: True
+  # force RES target including CI generation
+  stick_to_RES_target: False
 
 # local electrolysis production
 ci:
@@ -183,7 +186,7 @@ solving:
     name: gurobi
     threads: 8
     method: 2 # barrier
-    # crossover: 0
+    crossover: 0
     BarConvTol: 1.e-5
     Seed: 123
     AggFill: 0
