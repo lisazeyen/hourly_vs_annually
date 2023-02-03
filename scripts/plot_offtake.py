@@ -713,7 +713,7 @@ def plot_attributional_emissions_share(attr_emissions, wished_policies, wished_o
 def plot_cost_breakdown(h2_cost, wished_policies, wished_order, volume, name=""):
     h2_cost = h2_cost[~h2_cost.index.duplicated()]
     costb = h2_cost.xs((res_share, volume), level=[1,2], axis=1).droplevel(0)
-    costb = costb.loc[:, costb.columns.duplicated()]
+    costb = costb.loc[:, ~costb.columns.duplicated()]
     costb = costb.stack().reindex(wished_policies, axis=1).fillna(0).unstack()
     costb = costb.reindex(wished_order, level=1, axis=1)
     costb.rename(columns=rename_scenarios,
@@ -862,7 +862,7 @@ def plot_h2genmix(h2_gen_mix, wished_policies, wished_order, volume,
                      "ror", "biomass CHP", "CCGT", "OCGT", "coal", "lignite", "oil"]
     gen_mix = gen_mix.reindex(carrier_order)
     gen_mix = gen_mix.rename(index=rename_techs)
-    gen_mix = gen_mix.loc[:, gen_mix.columns.duplicated()]
+    gen_mix = gen_mix.loc[:, ~gen_mix.columns.duplicated()]
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
                            sharey=True,figsize=(9,3.5))
     for i, policy in enumerate(nice_names):
