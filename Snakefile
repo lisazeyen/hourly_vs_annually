@@ -21,36 +21,55 @@ rule plot_all:
     input:
         expand(RDIR + "/graphs/{year}/{zone}/{palette}/cf_electrolysis.pdf", **config["scenario"])
 
-rule solve_base_network:
-    input:
-        config = RDIR + '/configs/config.yaml',
-        network2030 = config['n_2030'],
-        network2025 = config['n_2025'],
-        costs2030=CDIR + "/costs_2030.csv",
-        costs2025=CDIR + "/costs_2025.csv"
-    output:
-        network=RDIR + "/base/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume.nc"
-    log:
-        solver=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_solver.log",
-        python=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_python.log",
-        memory=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_memory.log"
-    threads: 12
-    resources: mem_mb=8000
-    script: "scripts/solve_network.py"
+if config["solving_option"] == "twostep":
+    rule solve_base_network:
+        input:
+            config = RDIR + '/configs/config.yaml',
+            network2030 = config['n_2030'],
+            network2025 = config['n_2025'],
+            costs2030=CDIR + "/costs_2030.csv",
+            costs2025=CDIR + "/costs_2025.csv"
+        output:
+            network=RDIR + "/base/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume.nc"
+        log:
+            solver=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_solver.log",
+            python=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_python.log",
+            memory=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_memory.log"
+        threads: 12
+        resources: mem_mb=8000
+        script: "scripts/solve_network.py"
 
+    rule resolve_network:
+        input:
+            base_network=RDIR + "/base/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume.nc"
+        output:
+            network=RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc"
+        log:
+            solver=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_solver.log",
+            python=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_python.log",
+            memory=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_memory.log"
+        threads: 12
+        resources: mem_mb=8000
+        script: "scripts/resolve_network.py"
 
-rule resolve_network:
-    input:
-        base_network=RDIR + "/base/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume.nc"
-    output:
-        network=RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc"
-    log:
-        solver=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_solver.log",
-        python=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_python.log",
-        memory=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_memory.log"
-    threads: 12
-    resources: mem_mb=30000
-    script: "scripts/resolve_network.py"
+if config["solving_option"] == "together":
+    rule solve_network_together:
+        input:
+            config = RDIR + '/configs/config.yaml',
+            network2030 = config['n_2030'],
+            network2025 = config['n_2025'],
+            costs2030=CDIR + "/costs_2030.csv",
+            costs2025=CDIR + "/costs_2025.csv"
+        output:
+            network=RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc"
+        log:
+            solver=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_solver.log",
+            python=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_python.log",
+            memory=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_memory.log"
+        threads: 12
+        resources: mem_mb=8000
+        script: "scripts/solve_network_together.py"
+
 
 rule summarise_offtake:
     input:

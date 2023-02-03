@@ -18,8 +18,19 @@ from solve_network import geoscope, freeze_capacities, add_battery_constraints
 
 
 
-def add_H2(n):
+def add_H2(n, snakemake):
 
+    zone = snakemake.wildcards.zone
+    area = snakemake.config['area']
+    name = snakemake.config['ci']['name']
+    policy = snakemake.wildcards.policy
+    node = geoscope(n, zone, area)['node']
+    year = snakemake.wildcards.year
+
+    # remove electricity demand of electrolysis
+    load_i = pd.Index([f"{node} electrolysis demand"])
+    if load_i[0] in n.loads.index:
+        n.mremove("Load", load_i)
     if policy == "ref":
         return None
 
@@ -163,91 +174,94 @@ def add_dummies(n):
             marginal_cost=1e6)
 
 
+def res_constraints(n, snakemake):
+    print("set res constraint")
+
+    ci = snakemake.config['ci']
+    name = snakemake.config['ci']['name']
+    policy = snakemake.wildcards.policy
+
+    res_gens = [name + " " + g for g in ci['res_techs']]
+
+    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                              index = n.snapshots,
+                              columns = res_gens)
+    res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+
+    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+    load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+
+    lhs = res + "\n" + load
+
+    con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+
+    allowed_excess = float(policy.replace("res","").replace("p","."))
+    load = join_exprs(linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis)))
+
+    lhs = res + "\n" + load
+
+
+    con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess',
+                             'REStarget_excess')
+
+
+def monthly_constraints(n, snakemake):
+
+
+    ci = snakemake.config['ci']
+    name = ci['name']
+    policy = snakemake.wildcards.policy
+
+    res_gens = [name + " " + g for g in ci['res_techs']]
+
+    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                              index = n.snapshots,
+                              columns = res_gens)
+    res = linexpr((weightings,get_var(n, "Generator", "p")[res_gens])).sum(axis=1) # single line sum
+    res = res.groupby(res.index.month).sum()
+
+    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+    # allowed_excess = float(policy.replace("monthly","").replace("p","."))
+    allowed_excess = 1
+    load = linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis))
+
+    load = load.groupby(load.index.month).sum()
+
+    for i in range(len(res.index)):
+        lhs = res.iloc[i] + "\n" + load.iloc[i]
+
+        con = define_constraints(n, lhs, '==', 0., f'RESconstraints_{i}',f'REStarget_{i}')
+
+def excess_constraints(n, snakemake):
+
+    res_gens = [f"{name} onwind",f"{name} solar"]
+
+    policy = snakemake.wildcards.policy
+
+    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                              index = n.snapshots,
+                              columns = res_gens)
+    res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+
+    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+    load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+
+    lhs = res + "\n" + load
+
+    con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+
+    allowed_excess = float(policy.replace("exl","").replace("p","."))
+
+    load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
+
+    lhs = res + "\n" + load
+
+    con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess','REStarget_excess')
+
 def solve(policy, n):
-
-    def res_constraints(n):
-        print("set res constraint")
-
-        ci = snakemake.config['ci']
-        name = ci['name']
-
-        res_gens = [name + " " + g for g in ci['res_techs']]
-
-        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                                  index = n.snapshots,
-                                  columns = res_gens)
-        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
-
-        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
-
-        load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
-
-        lhs = res + "\n" + load
-        print(res_gens, electrolysis)
-
-        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
-
-        allowed_excess = float(policy.replace("res","").replace("p","."))
-        load = join_exprs(linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis)))
-
-        lhs = res + "\n" + load
-        print(res_gens, electrolysis)
-
-        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess',
-                                 'REStarget_excess')
-
-
-    def monthly_constraints(n):
-
-
-        ci = snakemake.config['ci']
-        name = ci['name']
-
-        res_gens = [name + " " + g for g in ci['res_techs']]
-
-        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                                  index = n.snapshots,
-                                  columns = res_gens)
-        res = linexpr((weightings,get_var(n, "Generator", "p")[res_gens])).sum(axis=1) # single line sum
-        res = res.groupby(res.index.month).sum()
-
-        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
-
-        # allowed_excess = float(policy.replace("monthly","").replace("p","."))
-        allowed_excess = 1
-        load = linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis))
-
-        load = load.groupby(load.index.month).sum()
-
-        for i in range(len(res.index)):
-            lhs = res.iloc[i] + "\n" + load.iloc[i]
-
-            con = define_constraints(n, lhs, '==', 0., f'RESconstraints_{i}',f'REStarget_{i}')
-
-    def excess_constraints(n):
-
-        res_gens = [f"{name} onwind",f"{name} solar"]
-
-        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                                  index = n.snapshots,
-                                  columns = res_gens)
-        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
-
-        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
-
-        load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
-
-        lhs = res + "\n" + load
-
-        con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
-
-        allowed_excess = float(policy.replace("exl","").replace("p","."))
-
-        load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
-
-        lhs = res + "\n" + load
-
-        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess','REStarget_excess')
 
     def extra_functionality(n, snapshots):
 
@@ -255,13 +269,13 @@ def solve(policy, n):
 
         if "res" in policy:
             logger.info("setting annual RES target")
-            res_constraints(n)
+            res_constraints(n, snakemake)
         if "monthly" in policy:
             logger.info("setting monthly RES target")
-            monthly_constraints(n)
+            monthly_constraints(n, snakemake)
         elif "exl" in policy:
             logger.info("setting excess limit on hourly matching")
-            excess_constraints(n)
+            excess_constraints(n, snakemake)
 
     fn = getattr(snakemake.log, 'memory', None)
 
@@ -320,7 +334,7 @@ if __name__ == "__main__":
 
     freeze_capacities(n)
 
-    add_H2(n)
+    add_H2(n, snakemake)
 
     add_dummies(n)
 

@@ -77,7 +77,7 @@ def geoscope(n, zone, area):
     return d
 
 
-def timescope(zone, year):
+def timescope(zone, year, snakemake):
     '''
     country_res_target -> value of national RES policy constraint for {year} and {zone}
     coal_phaseout -> countries that implement coal phase-out policy until {year}
@@ -94,7 +94,7 @@ def timescope(zone, year):
     return d
 
 
-def cost_parametrization(n):
+def cost_parametrization(n, snakemake):
     '''
     overwrite default price assumptions for primary energy carriers
     only for virtual generators located in 'EU {carrier}' buses
@@ -106,7 +106,8 @@ def cost_parametrization(n):
     n.generators.loc[n.generators.carrier=="onwind", "marginal_cost"] = 0.015
 
 
-def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year):
+def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
+                  snakemake):
 
     #set all asset costs and other parameters
     costs = pd.read_csv(cost_file, index_col=[0,1]).sort_index()
@@ -173,7 +174,7 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year):
     return costs
 
 
-def strip_network(n):
+def strip_network(n, zone, area, snakemake):
     # buses to keep
     nodes_to_keep = geoscope(n, zone, area)['basenodes_to_keep']
     new_nodes = pd.Index([bus + " " + suffix for bus in nodes_to_keep for
@@ -204,7 +205,7 @@ def shutdown_lineexp(n):
     n.links.loc[n.links.carrier=='DC', 'p_nom_extendable'] = False
 
 
-def limit_resexp(n, year):
+def limit_resexp(n, year, snakemake):
     '''
     limit expansion of renewable technologies per zone and carrier type
     as a ratio of max increase to 2021 capacity fleet
@@ -227,10 +228,11 @@ def limit_resexp(n, year):
         n.generators.loc[gen_i, "p_nom_max"] = ratio * fleet.loc[ct, carrier]
 
 
-def phase_outs(n):
+def phase_outs(n, snakemake):
     """Set planned phase outs of conventional powerplants.
     """
     phase_outs = snakemake.config["phase_out"]
+    year = snakemake.wildcards.year
     for carrier in phase_outs.keys():
         countries = phase_outs[carrier][int(year)]
         carrier_list = [carrier]
@@ -247,10 +249,11 @@ def reduce_biomass_potential(n):
     n.stores.loc[n.stores.index=='EU solid biomass', 'e_initial'] *= 0.45
 
 
-def set_co2_policy(n):
+def set_co2_policy(n, snakemake, costs):
     """Set CO2 policy to a cap or CO2 price.
     """
     gl_policy = snakemake.config['global']
+    year = snakemake.wildcards.year
 
     if gl_policy['policy_type'] == "co2 cap":
         co2_cap = gl_policy['co2_share']*gl_policy['co2_baseline']
@@ -293,88 +296,89 @@ def add_battery_constraints(n):
 
     define_constraints(n, lhs, "=", 0, 'Link', 'charger_ratio')
 
+def country_res_constraints(n, snakemake):
+
+    ci_name = snakemake.config['ci']["name"]
+    zone = snakemake.wildcards.zone
+    year = snakemake.wildcards.year
+    country_targets = snakemake.config[f"res_target_{year}"]
+
+    for ct in country_targets.keys():
+
+        if ct == zone:
+            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct) |
+                                       (n.buses.index == f"{ci_name}")]
+        else:
+            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
+
+        if grid_buses.empty: continue
+
+        grid_res_techs = snakemake.config['global']['grid_res_techs']
+
+        grid_loads = n.loads.index[n.loads.bus.isin(grid_buses)]
+
+        country_res_gens = n.generators.index[n.generators.bus.isin(grid_buses)
+                                              & n.generators.carrier.isin(grid_res_techs)]
+        country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
+                                          & n.links.carrier.isin(grid_res_techs)]
+        country_res_storage_units = n.storage_units.index[n.storage_units.bus.isin(grid_buses)
+                                                          & n.storage_units.carrier.isin(grid_res_techs)]
+
+
+
+        eff_links = n.links.loc[country_res_links, "efficiency"]
+
+        weight_gens = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_gens)),
+                                  index = n.snapshots,
+                                  columns = country_res_gens)
+        weight_links = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_links)),
+                                  index = n.snapshots,
+                                  columns = country_res_links).mul(eff_links)
+        weight_sus= pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_storage_units)),
+                                  index = n.snapshots,
+                                  columns = country_res_storage_units)
+
+        gens = linexpr((weight_gens, get_var(n, "Generator", "p")[country_res_gens]))
+        links = linexpr((weight_links, get_var(n, "Link", "p")[country_res_links]))
+        sus = linexpr((weight_sus, get_var(n, "StorageUnit", "p_dispatch")[country_res_storage_units]))
+        lhs_temp = pd.concat([gens, links, sus], axis=1)
+
+        lhs = join_exprs(lhs_temp)
+
+
+        target = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
+        if  snakemake.wildcards.res_share=="p0":
+            target = timescope(zone, year, snakemake)["country_res_target"]
+
+        total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
+
+        # add for ct in zone electrolysis demand to load
+        if ct==zone:
+
+            logger.info("Consider electrolysis demand for RES target.")
+            # H2 demand in zone
+            offtake_volume = float(snakemake.wildcards.offtake_volume)
+            # efficiency of electrolysis
+            efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+
+            # electricity demand of electrolysis
+            demand_electrolysis = (offtake_volume/efficiency
+                                   *n.snapshot_weightings.generators).sum()
+            total_load += demand_electrolysis
+
+        logger.info(f"country RES constraints for {ct} {target} and total load {total_load}")
+
+        con = define_constraints(n, lhs, '=', target*total_load, f'countryRESconstraints_{ct}',f'countryREStarget_{ct}')
+
 
 def solve_network(n, tech_palette):
 
     clean_techs, storage_techs, storage_chargers, storage_dischargers = palette(tech_palette)
 
-    def country_res_constraints(n):
-
-        country_targets = snakemake.config[f"res_target_{year}"]
-
-        for ct in country_targets.keys():
-
-            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
-
-            if grid_buses.empty: continue
-
-            grid_res_techs = snakemake.config['global']['grid_res_techs']
-
-            grid_loads = n.loads.index[n.loads.bus.isin(grid_buses)]
-
-            country_res_gens = n.generators.index[n.generators.bus.isin(grid_buses)
-                                                  & n.generators.carrier.isin(grid_res_techs)]
-            country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
-                                              & n.links.carrier.isin(grid_res_techs)]
-            country_res_storage_units = n.storage_units.index[n.storage_units.bus.isin(grid_buses)
-                                                              & n.storage_units.carrier.isin(grid_res_techs)]
-
-
-
-            eff_links = n.links.loc[country_res_links, "efficiency"]
-
-            weight_gens = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_gens)),
-                                      index = n.snapshots,
-                                      columns = country_res_gens)
-            weight_links = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_links)),
-                                      index = n.snapshots,
-                                      columns = country_res_links).mul(eff_links)
-            weight_sus= pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_storage_units)),
-                                      index = n.snapshots,
-                                      columns = country_res_storage_units)
-
-            gens = linexpr((weight_gens, get_var(n, "Generator", "p")[country_res_gens]))
-            links = linexpr((weight_links, get_var(n, "Link", "p")[country_res_links]))
-            sus = linexpr((weight_sus, get_var(n, "StorageUnit", "p_dispatch")[country_res_storage_units]))
-            lhs_temp = pd.concat([gens, links, sus], axis=1)
-
-            lhs = join_exprs(lhs_temp)
-
-            target = timescope(ct, year)["country_res_target"]
-            if ct == zone and snakemake.wildcards.res_share!="p0":
-                target = res_share
-            total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
-
-            # add for ct in zone electrolysis demand to load
-            if (ct==zone) and snakemake.config["scenario"]["h2_demand_included"]:
-
-                logger.info("Consider electrolysis demand for RES target.")
-                # H2 demand in zone
-                offtake_volume = float(snakemake.wildcards.offtake_volume)
-                # efficiency of electrolysis
-                efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
-                if snakemake.config["scenario"]["h2_demand_added"]:
-                    logger.info("Add electrolysis demand.")
-                    load_elec = offtake_volume/efficiency
-                    n.add("Load",
-                          f"{geoscope(n,zone, area)['node']} electrolysis demand",
-                          bus=geoscope(n,zone, area)['node'],
-                          p_set=load_elec,
-                          carrier="electricity")
-                # electricity demand of electrolysis
-                demand_electrolysis = (offtake_volume/efficiency
-                                       *n.snapshot_weightings.generators).sum()
-                total_load += demand_electrolysis
-
-            logger.info(f"country RES constraints for {ct} {target} and total load {total_load}")
-
-            con = define_constraints(n, lhs, '=', target*total_load, f'countryRESconstraints_{ct}',f'countryREStarget_{ct}')
-
-
     def extra_functionality(n, snapshots):
 
         add_battery_constraints(n)
-        country_res_constraints(n)
+        country_res_constraints(n, snakemake)
 
 
     if snakemake.config["global"]["must_run"]:
@@ -437,30 +441,44 @@ if __name__ == "__main__":
 
     res_share = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
     if  snakemake.wildcards.res_share=="p0":
-        res_share = timescope(zone, year)["country_res_target"]
+        res_share = timescope(zone, year, snakemake)["country_res_target"]
     logger.info(f"RES share: {res_share}")
 
     # import network -------------------------------------------------------
-    n = pypsa.Network(timescope(zone, year)['network_file'],
+    n = pypsa.Network(timescope(zone, year, snakemake)['network_file'],
                       override_component_attrs=override_component_attrs())
 
     Nyears = 1 # years in simulation
-    costs = prepare_costs(timescope(zone, year)['costs_projection'],
+    costs = prepare_costs(timescope(zone, year, snakemake)['costs_projection'],
                           snakemake.config['costs']['USD2013_to_EUR2013'],
                           snakemake.config['costs']['discountrate'],
                           Nyears,
                           snakemake.config['costs']['lifetime'],
-                          year)
+                          year,
+                          snakemake)
 
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
-        strip_network(n)
+        strip_network(n, zone, area, snakemake)
         shutdown_lineexp(n)
-        limit_resexp(n,year)
-        phase_outs(n)
+        limit_resexp(n,year, snakemake)
+        phase_outs(n, snakemake)
         reduce_biomass_potential(n)
-        cost_parametrization(n)
+        cost_parametrization(n, snakemake)
+        set_co2_policy(n, snakemake, costs)
+
+        offtake_volume = float(snakemake.wildcards.offtake_volume)
+        # efficiency of electrolysis
+        efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+        if snakemake.config["scenario"]["h2_demand_added"]:
+            logger.info("Add electrolysis demand.")
+            load_elec = offtake_volume/efficiency
+            n.add("Load",
+                  f"{geoscope(n,zone, area)['node']} electrolysis demand",
+                  bus=geoscope(n,zone, area)['node'],
+                  p_set=pd.Series(load_elec, index=n.snapshots),
+                  carrier="electricity")
 
         solve_network(n, tech_palette)
 

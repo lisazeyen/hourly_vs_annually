@@ -12,7 +12,7 @@ n_2030: 'input/v6_elec_s_37_lv1.0__3H-B-solar+p3_2030.nc'
 ###################
 # Scenario controls
 
-run: 'newrestarget_constraint'
+run: 'together'
 
 #wildcards
 scenario:
@@ -30,14 +30,9 @@ scenario:
   res_share: [p0] #, p01, p10, p20, p30, p35, p40, p45, p50, p55, p60, p70, p80, p90, 1p0]  # [EUR/kg_H2] fixed offtake price of H2
   offtake_volume: [3200] # [2233,3200, 6700]  # [MWh_H2 per h] fixed offtake volume per hour, 10 GB planned in DE by 2030 if run 100% 10GB*0.67=6700MWh/h
   storage: ["flexibledemand", "underground", "mtank", "htank", "nostore"]  # storage type at google node
-  # if res target should include demand of electrolysis in zone
-  # if true res_target*(elec load + electrolysis demand) = res generation
-  # if false res_target*elec load = res generation
-  h2_demand_included: True 
-  h2_demand_added: True
-  # force RES target including CI generation
-  stick_to_RES_target: False
 
+
+solving_option: "together"   # options ["twostep", "together"]
 # local electrolysis production
 ci:
   name: "CI"
