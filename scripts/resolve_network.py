@@ -236,6 +236,9 @@ def monthly_constraints(n, snakemake):
 
 def excess_constraints(n, snakemake):
 
+    ci = snakemake.config['ci']
+    name = ci['name']
+
     res_gens = [f"{name} onwind",f"{name} solar"]
 
     policy = snakemake.wildcards.policy

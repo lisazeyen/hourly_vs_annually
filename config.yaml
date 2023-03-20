@@ -12,11 +12,11 @@ n_2030: 'input/v6_elec_s_37_lv1.0__3H-B-solar+p3_2030.nc'
 ###################
 # Scenario controls
 
-run: 'together'
+run: 'two_steps_with2demand'
 
 #wildcards
 scenario:
-  policy:  ["ref", "grd", "res1p0","exl1p0", "offgrid", "monthly"]# "res1p0","res1p2","res1p3", "cfe","exl1p0","exl1p2","exl1p3", "offgrid", "monthly"]
+  policy:  ["ref", "grd", "res1p0","res1p2","res1p3", "cfe","exl1p0","exl1p2","exl1p3", "offgrid", "monthly"]
   # ref: no H2 demand
   # grd: H2 demand met from grid with no local procurement
   # res: H2 elec demand matched by procured wind and solar annually
@@ -30,9 +30,10 @@ scenario:
   res_share: [p0] #, p01, p10, p20, p30, p35, p40, p45, p50, p55, p60, p70, p80, p90, 1p0]  # [EUR/kg_H2] fixed offtake price of H2
   offtake_volume: [3200] # [2233,3200, 6700]  # [MWh_H2 per h] fixed offtake volume per hour, 10 GB planned in DE by 2030 if run 100% 10GB*0.67=6700MWh/h
   storage: ["flexibledemand", "underground", "mtank", "htank", "nostore"]  # storage type at google node
+  h2_demand_added: True
 
 
-solving_option: "together"   # options ["twostep", "together"]
+solving_option: "twostep"   # options ["twostep", "together"]
 # local electrolysis production
 ci:
   name: "CI"
