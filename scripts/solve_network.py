@@ -352,8 +352,8 @@ def country_res_constraints(n, snakemake):
 
         total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
 
-        # add for ct in zone electrolysis demand to load
-        if ct==zone:
+        # add for ct in zone electrolysis demand to load if not "reference" scenario
+        if (ct==zone) and (f"{ci_name}" in n.buses.index):
 
             logger.info("Consider electrolysis demand for RES target.")
             # H2 demand in zone
