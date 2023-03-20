@@ -6,21 +6,19 @@ Created on Wed Oct 12 16:32:11 2022
 @author: lisa
 """
 import pandas as pd
-import pypsa
 import matplotlib.pyplot as plt
-from _helpers import override_component_attrs
-from resolve_network import geoscope
+
 
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
+        os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
                                    zone='DE', year='2025',  participation='10',
                                    policy="ref")
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/")
+        os.chdir("/home/lisa/mnt/hourly_vs_annually/")
 
 LHV_H2 = 33.33 # lower heating value [kWh/kg_H2]
 
@@ -406,7 +404,7 @@ def plot_duration_curve(cf, tech, wished_policies, wished_order, volume, name=""
 
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
                            sharey=True, sharex=True,
-                           figsize=(9,3.5))
+                           figsize=(10,1.5))
     nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys() else scen for scen in wished_policies]
     for i, policy in enumerate(nice_names):
         cf_elec[policy].plot(grid=True, ax=ax[i], title=policy, lw=2, legend=False)
@@ -433,7 +431,7 @@ def plot_cf(df, wished_policies, wished_order, volume, name=""):
     cf_elec.rename(index=rename_scenarios,
                    level=0,inplace=True)
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,
-                           figsize=(9,3.5))
+                           figsize=(10, 1.5))
     nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys() else scen for scen in wished_policies]
     for i, policy in enumerate(nice_names):
         cf_elec.loc[policy].plot(kind="bar", grid=True, ax=ax[i], title=policy,
@@ -459,7 +457,7 @@ def plot_cf_shares(df, wished_policies, wished_order, volume, name=""):
     for policy in cf_elec.index.levels[0]:
         shares = cf_elec.index.get_level_values(1).unique()
         fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,
-                               figsize=(9,3.5))
+                               figsize=(10,1.5))
 
         for i, share in enumerate(shares):
             if share==res_share:
@@ -497,7 +495,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
 
     nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys()
                   else scen for scen in wished_policies]
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
         produced_H2 = float(volume)*8760 / LHV_H2
@@ -514,14 +512,14 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
 
     y_min = 0
     y_max = 0
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
         produced_H2 = float(volume)*8760 / LHV_H2
         em_p = emissions_s[policy].sub(emissions_s["ref"])/ produced_H2
 
         em_p.sum().rename("net total").plot(ax=ax[i], lw=0, marker="_", color="black",
-                                            markersize=20, markeredgewidth=3)
+                                            markersize=15, markeredgewidth=2)
         # em_p.sum().rename("net total").plot(ax=ax[i], kind="bar", color="black",
         #                                     width=0.25, position=-1)
         em_p.T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
@@ -540,7 +538,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
         if em_p[em_p>0].sum().max()>y_max: y_max = em_p[em_p>0].sum().max()
     ax[0].set_ylim([1.1*y_min, 1.1*y_max])
     ax[0].set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
-    plt.legend(fontsize=9)
+    plt.legend(fontsize=9, bbox_to_anchor=(1,1))
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
                 bbox_inches="tight")
 
@@ -564,7 +562,7 @@ def plot_consequential_emissions_share(emissions, supply_energy, wished_policies
                   else scen for scen in wished_policies]
     for policy in nice_names:
         shares = emissions_v.index.get_level_values(1).unique()
-        fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize=(9,3.5))
+        fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize=(10,1.5))
         for i, share in enumerate(shares):
             # annually produced H2 in [t_H2/a]
             produced_H2 = float(volume)*8760 / LHV_H2
@@ -589,7 +587,7 @@ def plot_consequential_emissions_share(emissions, supply_energy, wished_policies
         shares = emissions_s.columns.get_level_values(1).unique()
         y_min = 0
         y_max = 0
-        fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize=(9,3.5))
+        fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize=(10,1.5))
         for i, share in enumerate(shares):
             # annually produced H2 in [t_H2/a]
             produced_H2 = float(volume)*8760 / LHV_H2
@@ -636,7 +634,8 @@ def plot_attributional_emissions(attr_emissions, wished_policies, wished_order, 
                            level=0,inplace=True)
         nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys()
                       else scen for scen in wished_policies]
-        figsize=(4.5,3.5) if len(wished_policies)==2  else  (9,3.5)
+        width = len(wished_policies)*2
+        figsize=(width,1.5)
         fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=figsize,
                                )
         for i, policy in enumerate(nice_names):
@@ -652,14 +651,14 @@ def plot_attributional_emissions(attr_emissions, wished_policies, wished_order, 
             ax[i].axhline(y=3, linestyle="--", color="black")
             ax[i].axhline(y=10, linestyle="--", color="black")
         ax[0].set_ylabel("attributional emissions\n [kg$_{CO_2}$/kg$_{H_2}$]")
-        ax[len(wished_policies)-1].text(x= 0.93*len(wished_order), y=0.8, s='carbon intensity of\nblue hydrogen')
-        ax[len(wished_policies)-1].text(x= 0.93*len(wished_order), y=9.8, s='carbon intensity of\ngrey hydrogen')
+        ax[len(wished_policies)-1].text(x= 0.93*len(wished_order), y=0., s='carbon intensity of\nblue hydrogen')
+        ax[len(wished_policies)-1].text(x= 0.93*len(wished_order), y=8, s='carbon intensity of\ngrey hydrogen')
         ax[len(wished_policies)-1].text(x=0.93*len(wished_order), y=2.8, s='EU threshold for \nlow-carbon hydrogen')
         if consider_import == "with imports":
             suffix = ""
         else:
             suffix = "_noimports"
-        plt.legend(ncol=2, bbox_to_anchor=(1,1), loc="upper left", fontsize=10) if len(wished_policies)==2  else  plt.legend(ncol=2,fontsize=10)
+        plt.legend(ncol=2, bbox_to_anchor=(1,1), loc="upper left", fontsize=10) if len(wished_policies)==2  else  plt.legend(ncol=1,fontsize=10, bbox_to_anchor=(2., -0.))
         # plt.legend(ncol=2) # bbox_to_anchor=(1,0.85), loc="upper left")
         plt.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"attributional_emissions_{volume}{name}{suffix}.pdf",
                     bbox_inches='tight')
@@ -735,11 +734,11 @@ def plot_cost_breakdown(h2_cost, wished_policies, wished_order, volume, name="")
     singlecost = singlecost.reindex(index=wished_tech_order)
 
 
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         singlecost.sum().loc[policy].rename("net total").plot(ax=ax[i], marker="_",
                                                               lw=0, color="black",
-                                                              markersize=20, markeredgewidth=3)
+                                                              markersize=15, markeredgewidth=2)
         singlecost.T.loc[policy].plot(kind="bar", stacked=True, ax=ax[i], title=policy,
                  color=[snakemake.config['tech_colors'][i] for i in singlecost.index],
                  grid=True, legend=False,  width=0.65)
@@ -817,7 +816,7 @@ def plot_shadow_prices(weighted_prices, wished_policies, wished_order, volume,
     not_grd = w_price.index!=("grid", "nostore")
 
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
-                           sharey=True,figsize=(9,3.5))
+                           sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         w_price.loc[policy].reindex(wished_order).plot(kind="bar", ax=ax[i],
                                                  title=policy, grid=True, width=0.65)
@@ -833,7 +832,7 @@ def plot_shadow_prices(weighted_prices, wished_policies, wished_order, volume,
 
     if len(no_hourly)!=0:
         fig, ax = plt.subplots(nrows=1, ncols=len(no_hourly),
-                               sharey=True,figsize=(9,3.5))
+                               sharey=True,figsize=(10,1.5))
         for i, policy in enumerate(no_hourly):
             w_price.loc[policy].reindex(wished_order).plot(kind="bar", ax=ax[i],
                                                      title=policy, grid=True, width=0.65)
@@ -864,7 +863,7 @@ def plot_h2genmix(h2_gen_mix, wished_policies, wished_order, volume,
     gen_mix = gen_mix.rename(index=rename_techs)
     gen_mix = gen_mix.loc[:, ~gen_mix.columns.duplicated()]
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
-                           sharey=True,figsize=(9,3.5))
+                           sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         (gen_mix[policy]/1e6).reindex(columns=wished_order).T.plot(kind="bar", stacked=True,
                                                              ax=ax[i], width=0.65,
@@ -964,11 +963,12 @@ rename_scenarios = {"res1p0": "annually", "exl1p0": "hourly", "offgrid": "hourly
                     "res1p3": "annually excess 30%", "exl1p3": "hourly excess 30%",}
 
 plot_scenarios = {"":["grd", "res1p0", "offgrid","exl1p2"],
+                  "wmonthly":["grd", "res1p0", "monthly", "offgrid","exl1p2"],
                   "_sensi_excess":  ["offgrid", "exl1p2", "exl1p3"],
                   "_sensi_excess_annual": ["res1p0", "res1p2", "res1p3"],
                   "_sensi_monthly": ["res1p0", "monthly", "offgrid"],
                   "_sensi_monthly_nohourly": ["res1p0", "monthly"],
-                   "_without_hourly": ["grd", "res1p0","exl1p2"]
+                   "_without_hourly": ["grd", "res1p0", "monthly"]
                   }
 wished_order = snakemake.config["scenario"]["storage"]
 year = snakemake.wildcards.year
@@ -1018,7 +1018,7 @@ for volume in res.columns.levels[2]:
                         level=0,inplace=True)
     caps.rename(index=rename_techs, inplace=True)
     fig, ax = plt.subplots(nrows=1, ncols=len(caps.columns.levels[0]), sharey=True,
-                            figsize=(9,3.5))
+                            figsize=(10,1.5))
     for i, policy in enumerate(policy_order):
 
         (caps[policy].T/1e3).plot(grid=True,
@@ -1042,7 +1042,7 @@ for volume in res.columns.levels[2]:
     caps.rename(columns=rename_scenarios,
                         level=0,inplace=True)
     caps.rename(index=rename_techs, inplace=True)
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(10,1.5))
     for i, policy in enumerate(policy_order):
 
         (caps[policy].T/1e3).plot(grid=True,
@@ -1068,7 +1068,7 @@ for volume in res.columns.levels[2]:
                         level=0,inplace=True)
     caps.rename(index=rename_techs, inplace=True)
     caps.drop("flexibledemand", level=1, axis=1, inplace=True)
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(10,1.5))
     for i, policy in enumerate(policy_order):
 
         (caps[policy].T/1e3).plot(grid=True,
@@ -1105,7 +1105,7 @@ for volume in res.columns.levels[2]:
         else:
             d = d.xs(f"{name}", axis=1,level=1)
         d = d.reindex(columns=policy_order)
-        fig, ax = plt.subplots(nrows=1, ncols=len(d.columns), sharey=True, figsize=(9,3.5))
+        fig, ax = plt.subplots(nrows=1, ncols=len(d.columns), sharey=True, figsize=(10,1.5))
         for i, policy in enumerate(d.columns):
             ((1-d[policy])*100).plot(kind="bar", grid=True, ax=ax[i], color=snakemake.config['tech_colors'][carrier],
                                       width=0.65,
@@ -1123,7 +1123,7 @@ for volume in res.columns.levels[2]:
                       inplace=True)
     traffic = traffic.reindex(wished_order, level=1, axis=1)
     traffic.rename(index=lambda x:rename_techs[x.replace("0","").replace("1","")], inplace=True)
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(9,3.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True, figsize=(10,1.5))
     for i, policy in enumerate(traffic.columns.levels[0]):
         (traffic[policy]/1e6).T.plot(kind="bar", grid=True, ax=ax[i], color=[snakemake.config['tech_colors'][i] for i in traffic.index],
                                   width=0.65, stacked=True,
@@ -1212,7 +1212,7 @@ for volume in res.columns.levels[2]:
 # a = (a/a.sum())*100
 # a.loc["offshore wind",:] = a[a.index.str.contains("offshore")].sum()
 # a.drop(["offshore wind AC", "offshore wind DC"], errors="ignore", inplace=True)
-# fig, ax = plt.subplots(figsize=(9,3.5))
+# fig, ax = plt.subplots(figsize=(10,1.5))
 # a.T.plot(kind="bar", ax=ax, stacked=True, grid=True,
 #                       color=[snakemake.config['tech_colors'][i] for i in a.index],
 #                       width=0.65)
