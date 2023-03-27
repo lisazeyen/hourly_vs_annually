@@ -291,9 +291,15 @@ def solve(policy, n):
            solver_options=solver_options,
            solver_logfile=snakemake.log.solver)
 
-    # if result != "ok" or message != "optimal":
-    #     logger.info(f"solver ended with {result} and {message}, so quitting")
-    #     sys.exit()
+    if result != "ok" or message != "optimal":
+        logger.info(f"solver ended with {result} and {message}, so re-running")
+        solver_options["crossover"] = 1
+        result, message = n.lopf(pyomo=False,
+               extra_functionality=extra_functionality,
+               solver_name=solver_name,
+               solver_options=solver_options,
+               solver_logfile=snakemake.log.solver)
+
 
 
 
