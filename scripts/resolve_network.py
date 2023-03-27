@@ -254,7 +254,8 @@ def excess_constraints(n, snakemake):
 
     lhs = res + "\n" + load
 
-    con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+    # there is no import so I think we don't need this constraint
+    # con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
 
     allowed_excess = float(policy.replace("exl","").replace("p","."))
 
