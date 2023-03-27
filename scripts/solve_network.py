@@ -302,6 +302,7 @@ def country_res_constraints(n, snakemake):
     year = snakemake.wildcards.year
     country_targets = snakemake.config[f"res_target_{year}"]
 
+
     for ct in country_targets.keys():
 
         if ct == zone:
@@ -344,10 +345,11 @@ def country_res_constraints(n, snakemake):
 
         lhs = join_exprs(lhs_temp)
 
+        target = timescope(ct, year, snakemake)["country_res_target"]
 
-        target = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
-        if  snakemake.wildcards.res_share=="p0":
-            target = timescope(zone, year, snakemake)["country_res_target"]
+        if  (snakemake.wildcards.res_share!="p0") and (ct == zone):
+            target = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
+
 
         total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
 
@@ -365,6 +367,7 @@ def country_res_constraints(n, snakemake):
         #                            *n.snapshot_weightings.generators).sum()
         #     total_load += demand_electrolysis
 
+        print(f"country RES constraints for {ct} {target} and total load {total_load}")
         logger.info(f"country RES constraints for {ct} {target} and total load {total_load}")
 
         con = define_constraints(n, lhs, '=', target*total_load, f'countryRESconstraints_{ct}',f'countryREStarget_{ct}')
@@ -392,12 +395,20 @@ def solve_network(n, tech_palette):
     final_sn = n.snapshots[n.snapshots<to_drop][-1]
     n.snapshot_weightings.loc[final_sn] *= 2
 
+    # # and another one
+    # to_drop  = pd.Timestamp('2013-11-28 15:00:00')
+    # new_snapshots = n.snapshots.drop(to_drop)
+    # n.set_snapshots(new_snapshots)
+    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    # n.snapshot_weightings.loc[final_sn] *= 2
+
     # and another one
-    to_drop  = pd.Timestamp('2013-11-28 15:00:00')
+    to_drop  = pd.Timestamp('2013-01-17 06:00:00')
     new_snapshots = n.snapshots.drop(to_drop)
     n.set_snapshots(new_snapshots)
     final_sn = n.snapshots[n.snapshots<to_drop][-1]
     n.snapshot_weightings.loc[final_sn] *= 2
+
 
     formulation = snakemake.config['solving']['options']['formulation']
     solver_options = snakemake.config['solving']['solver']
