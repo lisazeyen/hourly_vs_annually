@@ -16,7 +16,7 @@ if __name__ == "__main__":
         os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
-                                   zone='DE', year='2025',  participation='10',
+                                   zone='DE', year='2030',  participation='10',
                                    policy="ref")
         os.chdir("/home/lisa/mnt/hourly_vs_annually/")
 
@@ -950,6 +950,21 @@ for csv in snakemake.input:
                                     index_col=0, header=[0,1,2,3,4], parse_dates=True)
     if not cf_s.empty: cf = pd.concat([cf, cf_s], axis=1)
 
+path = snakemake.output["cf_plot"].replace("graphs", "csvs").split("/cf_electrolysis")[0]
+final.to_csv(path + "/final_together.csv")
+cf.mean().xs(f"{name} H2 Electrolysis", level=4).to_csv(path + "/cf_together.csv")
+emissions.to_csv(path + "/emissions_together.csv")
+supply_energy.to_csv(path + "/supply_energy_together.csv")
+nodal_capacities.to_csv(path + "/nodal_capacities_together.csv")
+weighted_prices.to_csv(path + "/weighted_prices_together.csv")
+curtailment.to_csv(path + "/curtailment_together.csv")
+nodal_costs.to_csv(path + "/nodal_costs_together.csv")
+costs.to_csv(path + "/costs_together.csv")
+h2_cost.to_csv(path + "/h2_cost_together.csv")
+emission_rate.to_csv(path + "/emission_rate_together.csv")
+nodal_supply_energy.to_csv(path + "/nodal_supply_together.csv")
+h2_gen_mix.to_csv(path + "/h2_gen_mix_together.csv")
+attr_emissions.to_csv(path + "/attr_emissions_together.csv")
 
 #%%
 a = cf.mean().xs(f"{name} H2 Electrolysis", level=4)
@@ -1237,3 +1252,6 @@ for volume in res.columns.levels[2]:
 # together.groupby(together.index.month).sum().plot(ax=ax)
 # together.groupby(together.index.month).sum().groupby(level=0, axis=1).sum().plot(ax=ax)
 # plt.legend(bbox_to_anchor=(1,1))
+
+
+#%%% cleanness of the grid
