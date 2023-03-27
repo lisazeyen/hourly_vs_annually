@@ -1,7 +1,6 @@
 
 import pypsa, numpy as np, pandas as pd
 from pypsa.linopt import get_var, linexpr, join_exprs, define_constraints
-from pypsa.descriptors import expand_series
 from vresutils.costdata import annuity
 
 import logging
@@ -353,18 +352,18 @@ def country_res_constraints(n, snakemake):
         total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
 
         # add for ct in zone electrolysis demand to load if not "reference" scenario
-        if (ct==zone) and (f"{ci_name}" in n.buses.index):
+        # if (ct==zone) and (f"{ci_name}" in n.buses.index):
 
-            logger.info("Consider electrolysis demand for RES target.")
-            # H2 demand in zone
-            offtake_volume = float(snakemake.wildcards.offtake_volume)
-            # efficiency of electrolysis
-            efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+        #     logger.info("Consider electrolysis demand for RES target.")
+        #     # H2 demand in zone
+        #     offtake_volume = float(snakemake.wildcards.offtake_volume)
+        #     # efficiency of electrolysis
+        #     efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
 
-            # electricity demand of electrolysis
-            demand_electrolysis = (offtake_volume/efficiency
-                                   *n.snapshot_weightings.generators).sum()
-            total_load += demand_electrolysis
+        #     # electricity demand of electrolysis
+        #     demand_electrolysis = (offtake_volume/efficiency
+        #                            *n.snapshot_weightings.generators).sum()
+        #     total_load += demand_electrolysis
 
         logger.info(f"country RES constraints for {ct} {target} and total load {total_load}")
 
@@ -388,6 +387,13 @@ def solve_network(n, tech_palette):
 
     # drop snapshots because of load shedding
     to_drop = pd.Timestamp('2013-01-16 15:00:00')
+    new_snapshots = n.snapshots.drop(to_drop)
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
+
+    # and another one
+    to_drop  = pd.Timestamp('2013-11-28 15:00:00')
     new_snapshots = n.snapshots.drop(to_drop)
     n.set_snapshots(new_snapshots)
     final_sn = n.snapshots[n.snapshots<to_drop][-1]
