@@ -258,7 +258,7 @@ def plot_balances(balances_df):
         # df = df.groupby(df.index.map(rename_techs)).sum()
         df = df.groupby(df.index).sum()
 
-        df = df.droplevel(0, axis=1)
+        df = df.droplevel([1,2], axis=1)
 
 
         to_drop = df.index[df.abs().max(axis=1) < 1] # snakemake.config['plotting']['energy_threshold']/10]
@@ -266,7 +266,7 @@ def plot_balances(balances_df):
 
         df = df.drop(to_drop)
 
-        df = df.droplevel(0, axis=1)
+        # df = df.droplevel(0, axis=1)
 
         print(df.sum())
 
@@ -658,7 +658,7 @@ def plot_attributional_emissions(attr_emissions, wished_policies, wished_order, 
             suffix = ""
         else:
             suffix = "_noimports"
-        plt.legend(ncol=2, bbox_to_anchor=(1,1), loc="upper left", fontsize=10) if len(wished_policies)==2  else  plt.legend(ncol=1,fontsize=10, bbox_to_anchor=(2., -0.))
+        plt.legend(ncol=2, bbox_to_anchor=(1,1), loc="upper left", fontsize=10) if len(wished_policies)==2  else  plt.legend(ncol=1,fontsize=10, bbox_to_anchor=(2.9, 1.))
         # plt.legend(ncol=2) # bbox_to_anchor=(1,0.85), loc="upper left")
         plt.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"attributional_emissions_{volume}{name}{suffix}.pdf",
                     bbox_inches='tight')
