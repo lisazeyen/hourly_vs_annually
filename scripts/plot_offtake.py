@@ -949,15 +949,7 @@ for volume in res.columns.levels[2]:
                         name="electrolysis")
     plot_duration_curve(cf, f"{name} H2 Store", wished_policies, wished_order, volume,
                         name="store")
-#%%
-# volume = "3200.0"
-# plot_cf_shares(a, wished_policies, wished_order, volume)
-# plot_consequential_emissions_share(emissions, supply_energy, wished_policies,
-#                                   wished_order, volume, name="")
-# plot_attributional_emissions_share(attr_emissions, wished_policies, wished_order,
-#                                     volume, name="")
-# plot_cost_breakdown_shares(h2_cost, wished_policies, wished_order, volume,
-#                             name="")
+
 #%%
 # plot_nodal_balances(nodal_supply_energy)
 # #%%
@@ -1047,6 +1039,3 @@ for volume in res.columns.levels[2]:
 # together.groupby(together.index.month).sum().plot(ax=ax)
 # together.groupby(together.index.month).sum().groupby(level=0, axis=1).sum().plot(ax=ax)
 # plt.legend(bbox_to_anchor=(1,1))
-
-
-#%%% cleanness of the grid
