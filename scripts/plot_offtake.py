@@ -813,9 +813,9 @@ for volume in a.index.get_level_values(2).unique():
  #%%
 name = snakemake.config['ci']['name']
 wished_policies = plot_scenarios["wmonthly"]
-res = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["solar", "onwind"])].drop("cfe", axis=1)
-store = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H2 Store", "battery"])].drop("cfe", axis=1)
-elec = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H2 Electrolysis"])].drop("cfe", axis=1)
+res = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["solar", "onwind"])].drop("cfe", axis=1, errors="ignore")
+store = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H2 Store", "battery"])].drop("cfe", errors="ignore", axis=1)
+elec = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H2 Electrolysis"])].drop("cfe", errors="ignore", axis=1)
 supply_energy.drop("cfe", axis=1, level=0,inplace=True, errors="ignore")
 policy_order = [rename_scenarios[x] if x in rename_scenarios.keys() else x
                 for x in plot_scenarios["wmonthly"]]
