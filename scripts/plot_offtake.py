@@ -449,13 +449,14 @@ def plot_cf(df, wished_policies, wished_order, volume, name=""):
 
 def plot_consequential_emissions(emissions, supply_energy, wished_policies,
                                  wished_order, volume, name=""):
+    compare_p = "ref" if snakemake.config["solving_option"]!="together" else "exl1p0"
     # consequential emissions
     emissions = emissions[~emissions.index.duplicated()]
-    emissions_v = emissions.loc[wished_policies+["ref"]].xs((float(res_share), float(volume)), level=[1,2])
+    emissions_v = emissions.loc[wished_policies+[compare_p]].xs((float(res_share), float(volume)), level=[1,2])
     emissions_v = emissions_v.reindex(wished_order, level=1)
     emissions_v.rename(index=rename_scenarios,
                        level=0,inplace=True)
-    emissions_s = (supply_energy.loc["co2"][wished_policies+["ref"]]
+    emissions_s = (supply_energy.loc["co2"][wished_policies+[compare_p]]
                    .xs((res_share, str(volume)),level=[1,2], axis=1))
     emissions_s = emissions_s.loc[:, ~emissions_s.columns.duplicated()]
     emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
@@ -465,11 +466,14 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
 
     nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys()
                   else scen for scen in wished_policies]
+    compare_p = [rename_scenarios[scen] if scen in rename_scenarios.keys()
+                  else scen for scen in [compare_p]]
+    emissions_v = emissions_v.groupby(level=[0,1]).first()
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
         produced_H2 = float(volume)*8760 / LHV_H2
-        em_p = emissions_v.loc[policy].sub(emissions_v.loc["ref"].mean())/ produced_H2
+        em_p = emissions_v.loc[policy].sub(emissions_v.loc[compare_p].mean())/ produced_H2
 
         em_p.iloc[:,0].plot(kind="bar", grid=True, ax=ax[i], title=policy,
                             width=0.65)
@@ -482,11 +486,12 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
 
     y_min = 0
     y_max = 0
+    emissions_s = emissions_s.groupby(level=[0,1], axis=1).first()
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
         produced_H2 = float(volume)*8760 / LHV_H2
-        em_p = emissions_s[policy].sub(emissions_s["ref"])/ produced_H2
+        em_p = emissions_s[policy].sub(emissions_s[compare_p[0]])/ produced_H2
 
         em_p.sum().rename("net total").plot(ax=ax[i], lw=0, marker="_", color="black",
                                             markersize=15, markeredgewidth=2)

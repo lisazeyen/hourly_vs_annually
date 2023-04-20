@@ -138,7 +138,7 @@ def plot_cf_shares(df, wished_policies, wished_order, volume, name=""):
     cf_elec.rename(index=rename_scenarios,
                    level=0,inplace=True)
     for policy in cf_elec.index.levels[0]:
-        shares = [0.45, 0.5, 0.55, 0.6, 0.7, 0.8,
+        shares = [0.45, 0.5, 0.6, 0.7, 0.8,
                       0.9, 1.0]#cf_elec.index.get_level_values(1).unique()
         fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,
                                figsize=(10,0.8))
@@ -177,7 +177,7 @@ def plot_consequential_emissions_share(emissions, supply_energy, wished_policies
     for i, policy in enumerate(nice_names):
         y_min = 0
         y_max = 0
-        shares = [0.45, 0.5, 0.55, 0.6, 0.7, 0.8,
+        shares = [0.45, 0.5, 0.6, 0.7, 0.8,
                       0.9, 1.0]#cf_elec.index.get_level_values(1).unique()
         fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize=(10,0.8))
         for i, share in enumerate(shares):
@@ -224,7 +224,7 @@ def plot_attributional_emissions_share(attr_emissions, wished_policies, wished_o
         nice_names = [rename_scenarios[scen] if scen in rename_scenarios.keys()
                       else scen for scen in wished_policies]
         for policy in nice_names:
-            shares =shares = [0.45, 0.5, 0.55, 0.6, 0.7, 0.8,
+            shares =shares = [0.45, 0.5,  0.6, 0.7, 0.8,
                           0.9, 1.0] # em_r.columns.levels[1]
             # figsize=(4.5,3.5) if len(wished_policies)==2  else  (9,3.5)
             fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize= (len(shares)*(2.5/2),0.8),
@@ -286,7 +286,7 @@ def plot_cost_breakdown_shares(h2_cost, wished_policies, wished_order, volume, n
     singlecost.rename(columns=lambda x: float(x), level=1, inplace=True)
 
     for policy in singlecost.columns.get_level_values(0).unique():
-        shares = [0.45, 0.5, 0.55, 0.6, 0.7, 0.8,
+        shares = [0.45, 0.5, 0.6, 0.7, 0.8,
                       0.9, 1.0] #singlecost.columns.get_level_values(1).unique()
         fig, ax = plt.subplots(nrows=1, ncols=len(shares), sharey=True,figsize= (len(shares)*(2.5/2),0.8))
         for i, share in enumerate(shares):
@@ -314,6 +314,137 @@ def plot_cost_breakdown_shares(h2_cost, wished_policies, wished_order, volume, n
         plt.legend(bbox_to_anchor=(1,1))
         fig.savefig(path_out+ f"{year}/{country}/costbreakdown_{policy}.pdf",
                     bbox_inches='tight')
+
+
+def plot_series(network,label, carrier="AC"):
+
+    n = network.copy()
+    # assign_location(n)
+    # assign_carriers(n)
+
+    buses = n.buses.index[n.buses.carrier.str.contains(carrier)]
+    buses = [f"{name}"]
+
+    supply = pd.DataFrame(index=n.snapshots)
+    for c in n.iterate_components(n.branch_components):
+        n_port = 4 if c.name=='Link' else 2
+        for i in range(n_port):
+            supply = pd.concat((supply,
+                                (-1) * c.pnl["p" + str(i)].loc[:,
+                                                               c.df.index[c.df["bus" + str(i)].isin(buses)]].groupby(c.df.carrier,
+                                                                                                                     axis=1).sum()),
+                               axis=1)
+
+    for c in n.iterate_components(n.one_port_components):
+        comps = c.df.index[c.df.bus.isin(buses)]
+        supply = pd.concat((supply, ((c.pnl["p"].loc[:, comps]).multiply(
+            c.df.loc[comps, "sign"])).groupby(c.df.carrier, axis=1).sum()), axis=1)
+
+    supply = supply.groupby(supply.columns, axis=1).sum()
+
+    both = supply.columns[(supply < 0.).any() & (supply > 0.).any()]
+
+    positive_supply = supply[both]
+    negative_supply = supply[both]
+
+    positive_supply[positive_supply < 0.] = 0.
+    negative_supply[negative_supply > 0.] = 0.
+
+    supply[both] = positive_supply
+
+    suffix = " charging"
+
+    negative_supply.columns = negative_supply.columns + suffix
+
+    supply = pd.concat((supply, negative_supply), axis=1)
+
+    # 14-21.2 for flaute
+    # 19-26.1 for flaute
+
+
+    threshold = 1
+
+    to_drop = supply.columns[(abs(supply) < threshold).all()]
+
+    if len(to_drop) != 0:
+        print("dropping", to_drop)
+        supply.drop(columns=to_drop, inplace=True)
+
+    if supply.empty: return
+
+    supply.index.name = None
+
+    supply = supply / 1e3
+
+    supply.rename(columns={"electricity": "electric demand",
+                           "heat": "heat demand"},
+                  inplace=True)
+    supply.columns = supply.columns.str.replace("residential ", "")
+    supply.columns = supply.columns.str.replace("services ", "")
+    supply.columns = supply.columns.str.replace("urban decentral ", "decentral ")
+
+    preferred_order = pd.Index([ "solar PV", "onshore wind", "batttery discharger",
+                                "purchase",
+                             "electrolysis",
+                             "battery charger", "sale"])
+
+    supply.rename(columns=rename_techs, inplace=True)
+    new_columns = (preferred_order.intersection(supply.columns)
+                   .append(supply.columns.difference(preferred_order)))
+
+    year = snakemake.wildcards.year
+    zone = snakemake.wildcards.zone
+    supply =  supply.groupby(supply.columns, axis=1).sum()
+    snakemake.config["tech_colors"]["PHS charging"] = snakemake.config["tech_colors"]["PHS"]
+    snakemake.config["tech_colors"]["electric demand"] = snakemake.config["tech_colors"]["AC"]
+    snakemake.config["tech_colors"]["offtake H2"] = "#FFC0CB"
+    supply.rename(index=lambda x: x.replace(year = int(year)),
+                  inplace=True)
+
+
+    starts = [f"{year}-03-01", f"{year}-12-21"]
+    stops = [f"{year}-03-08", f"{year}-12-28"]
+
+    for i, start in enumerate(starts):
+        stop = stops[i]
+        fig, ax = plt.subplots()
+        fig.set_size_inches((8, 3))
+
+        (supply.loc[start:stop, new_columns]
+         .plot(ax=ax, kind="area", stacked=True, linewidth=0.,
+               color=[snakemake.config['tech_colors'][i.replace(suffix, "")]
+                      for i in new_columns]))
+
+        handles, labels = ax.get_legend_handles_labels()
+
+        handles.reverse()
+        labels.reverse()
+
+        new_handles = []
+        new_labels = []
+
+        for i, item in enumerate(labels):
+            if "charging" not in item:
+                new_handles.append(handles[i])
+                new_labels.append(labels[i])
+
+        ax.legend(new_handles, new_labels, ncol=4, loc="upper left", frameon=False)
+        a = supply.loc[start:stop, new_columns]
+        y_max = a[a>0].sum(axis=1).max()*1.2
+        y_min = a[a<0].sum(axis=1).min()*1.1
+        ax.set_xlim([start, stop])
+        ax.set_ylim([y_min, y_max])
+        ax.grid(True)
+        ax.set_ylabel("Power [GW]")
+        fig.tight_layout()
+
+        run = snakemake.config["run"]
+        fig.savefig(path_out +
+                                                   "series-{}-{}-{}-{}-{}-{}-{}-{}.pdf".format(
+            zone,  label.split("_")[0],
+            label.split("_")[1],label.split("_")[2],
+            label.split("_")[3],  start, stop, year),
+            transparent=True)
 
 #%%% res share
 
@@ -371,3 +502,16 @@ plot_attributional_emissions_share(attr_emissions, wished_policies, wished_order
                                     volume, name="")
 plot_cost_breakdown_shares(h2_cost, wished_policies, wished_order, volume,
                             name="")
+
+#%% plot series
+path = "/home/lisa/mnt/hourly_vs_annually/results/two_steps_withhout_h2demand/networks/2025/DE/p1/"
+networks = ["monthly_p0_3200volume_flexibledemand",
+            "monthly_p0_3200volume_nostore",
+            "offgrid_p0_3200volume_flexibledemand",
+            "res1p0_p0_3200volume_nostore",
+            "exl1p2_p0_3200volume_flexibledemand",
+            "exl1p2_p0_3200volume_nostore"]
+for label in networks:
+    n = pypsa.Network(path + f"{label}.nc",
+                      override_component_attrs=override_component_attrs())
+    plot_series(n, label)
