@@ -1,15 +1,11 @@
-name: '247'
+name: hourly
 channels:
-  - defaults
+  - conda-forge
+  - bioconda
 dependencies:
-  - python=3.9
+  - python>=3.8
+  - pypsa>=0.21.3
   - matplotlib
   - numpy
   - pandas
-  - jupyter
-  - pypsa
   - yaml
-  - ca-certificates
-  - certifi
-  - openssl
-  - pypdf2=1.28.4
