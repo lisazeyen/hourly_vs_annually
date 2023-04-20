@@ -5,22 +5,21 @@ results_dir: 'results'
 costs_dir: '../technology-data/outputs'
 
 # from ../pypsa-eur-sec/results/<run>/prenetworks-brownfield
-n_2025: 'input/v6_elec_s_37_lv1.0__3H-B-solar+p3_2025.nc'
-n_2030: 'input/v6_elec_s_37_lv1.0__3H-B-solar+p3_2030.nc'
+n_2025: 'input/elec_s_37_lv1.0__1H-B-solar+p3_2025.nc'
+n_2030: 'input/elec_s_37_lv1.0__1H-B-solar+p3_2025.nc'
 
 
 ###################
 # Scenario controls
 
-run: 'two_steps_withouth2demand'
+run: 'hourly'
 
 #wildcards
 scenario:
-  policy:  ["ref", "grd", "res1p0","res1p2","res1p3", "cfe","exl1p0","exl1p2","exl1p3", "offgrid", "monthly"]
+  policy:  ["ref", "grd", "res1p0","res1p2","res1p3", "exl1p0","exl1p2","exl1p3", "offgrid", "monthly"]
   # ref: no H2 demand
   # grd: H2 demand met from grid with no local procurement
   # res: H2 elec demand matched by procured wind and solar annually
-  # cfe: no grid elec can be used to cover
   # exl: like cfe100 but excess limited to 20%
   palette: [ "p1", # onwind + solar + battery
             ]
