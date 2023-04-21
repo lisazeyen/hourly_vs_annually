@@ -67,6 +67,7 @@ additional_nodes: ["EU oil","EU gas", "EU lignite", "EU coal", "EU uranium", "EU
 
 global:
   must_run: False  # must run condition for coal power plants
+  uc: True  # unit commitment for conventional plants
   policy_type: "co2 price" # one of ["co2 cap", "co2 price"]
   co2_baseline: 1.2e+7  # MtCO2/a - rough "energy industries" emissions in 1990 and 2020 in IE: 1.2e7
   co2_share: 0.5 #pu  - rough target for 2030

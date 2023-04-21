@@ -36,7 +36,7 @@ if config["solving_option"] == "twostep":
             python=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_python.log",
             memory=RDIR + "/logs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_memory.log"
         threads: 12
-        resources: mem_mb=8000
+        resources: mem_mb=30000
         script: "scripts/solve_network.py"
 
     rule resolve_network:
@@ -49,7 +49,7 @@ if config["solving_option"] == "twostep":
             python=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_python.log",
             memory=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_memory.log"
         threads: 12
-        resources: mem_mb=20000
+        resources: mem_mb=30000
         script: "scripts/resolve_network.py"
 
 if config["solving_option"] == "together":
@@ -67,7 +67,7 @@ if config["solving_option"] == "together":
             python=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_python.log",
             memory=RDIR + "/logs/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}_memory.log"
         threads: 12
-        resources: mem_mb=20000
+        resources: mem_mb=30000
         script: "scripts/solve_network_together.py"
 
 

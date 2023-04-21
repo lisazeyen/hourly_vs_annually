@@ -279,21 +279,26 @@ def freeze_capacities(n):
 
 
 def add_battery_constraints(n):
-
-    chargers_b = n.links.carrier.str.contains("battery charger")
-    chargers = n.links.index[chargers_b & n.links.p_nom_extendable]
-    dischargers = chargers.str.replace("charger", "discharger")
-
-    if chargers.empty or ('Link', 'p_nom') not in n.variables.index:
+    """
+    Add constraint ensuring that charger = discharger, i.e.
+    1 * charger_size - efficiency * discharger_size = 0
+    """
+    if not n.links.p_nom_extendable.any():
         return
 
-    link_p_nom = get_var(n, "Link", "p_nom")
+    discharger_bool = n.links.index.str.contains("battery discharger")
+    charger_bool = n.links.index.str.contains("battery charger")
 
-    lhs = linexpr((1,link_p_nom[chargers]),
-                  (-n.links.loc[dischargers, "efficiency"].values,
-                   link_p_nom[dischargers].values))
+    dischargers_ext = n.links[discharger_bool].query("p_nom_extendable").index
+    chargers_ext = n.links[charger_bool].query("p_nom_extendable").index
 
-    define_constraints(n, lhs, "=", 0, 'Link', 'charger_ratio')
+    eff = n.links.efficiency[dischargers_ext].values
+    lhs = (
+        n.model["Link-p_nom"].loc[chargers_ext]
+        - n.model["Link-p_nom"].loc[dischargers_ext] * eff
+    )
+
+    n.model.add_constraints(lhs == 0, name="Link-charger_ratio")
 
 def country_res_constraints(n, snakemake):
 
@@ -301,6 +306,9 @@ def country_res_constraints(n, snakemake):
     zone = snakemake.wildcards.zone
     year = snakemake.wildcards.year
     country_targets = snakemake.config[f"res_target_{year}"]
+
+    weights = n.snapshot_weightings["generators"]
+    grid_res_techs = snakemake.config['global']['grid_res_techs']
 
 
     for ct in country_targets.keys():
@@ -312,8 +320,6 @@ def country_res_constraints(n, snakemake):
             grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
 
         if grid_buses.empty: continue
-
-        grid_res_techs = snakemake.config['global']['grid_res_techs']
 
         grid_loads = n.loads.index[n.loads.bus.isin(grid_buses)]
 
@@ -328,22 +334,11 @@ def country_res_constraints(n, snakemake):
 
         eff_links = n.links.loc[country_res_links, "efficiency"]
 
-        weight_gens = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_gens)),
-                                  index = n.snapshots,
-                                  columns = country_res_gens)
-        weight_links = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_links)),
-                                  index = n.snapshots,
-                                  columns = country_res_links).mul(eff_links)
-        weight_sus= pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_storage_units)),
-                                  index = n.snapshots,
-                                  columns = country_res_storage_units)
 
-        gens = linexpr((weight_gens, get_var(n, "Generator", "p")[country_res_gens]))
-        links = linexpr((weight_links, get_var(n, "Link", "p")[country_res_links]))
-        sus = linexpr((weight_sus, get_var(n, "StorageUnit", "p_dispatch")[country_res_storage_units]))
-        lhs_temp = pd.concat([gens, links, sus], axis=1)
-
-        lhs = join_exprs(lhs_temp)
+        gens =  n.model['Generator-p'].loc[:,country_res_gens] * weights
+        links = n.model['Link-p'].loc[:,country_res_links] * n.links.loc[country_res_links, "efficiency"] * weights
+        sus = n.model['StorageUnit-p_dispatch'].loc[:,country_res_storage_units] * weights
+        lhs = gens.sum() + sus.sum() + links.sum()
 
         target = timescope(ct, year, snakemake)["country_res_target"]
 
@@ -351,7 +346,7 @@ def country_res_constraints(n, snakemake):
             target = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
 
 
-        total_load = (n.loads_t.p_set[grid_loads].sum(axis=1) * n.snapshot_weightings["generators"]).sum()
+        total_load = (n.loads_t.p_set[grid_loads].sum(axis=1)*weights).sum() # number
 
         # add for ct in zone electrolysis demand to load if not "reference" scenario
         # if (ct==zone) and (f"{ci_name}" in n.buses.index):
@@ -367,10 +362,40 @@ def country_res_constraints(n, snakemake):
         #                            *n.snapshot_weightings.generators).sum()
         #     total_load += demand_electrolysis
 
-        print(f"country RES constraints for {ct} {target} and total load {total_load}")
-        logger.info(f"country RES constraints for {ct} {target} and total load {total_load}")
+        print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
+        logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
 
-        con = define_constraints(n, lhs, '=', target*total_load, f'countryRESconstraints_{ct}',f'countryREStarget_{ct}')
+        n.model.add_constraints(lhs == target*total_load, name=f"country_res_constraints_{ct}")
+
+
+def add_unit_committment(n):
+    """
+    Add unit commitment for conventionals
+    based on
+    https://discord.com/channels/914472852571426846/1042037164088766494/1042395972438868030
+    """
+    logger.info("add unit commitment")
+    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT"])].index
+    n.links.loc[links_i, "ramp_limit_up"] = 0.5
+    n.links.loc[links_i, "ramp_limit_down"] = 0.5
+    n.links.loc[links_i, "p_min_pu"] = 0.4
+    n.links.loc[links_i, "min_up_time"] = 6
+    n.links.loc[links_i, "min_down_time"] = 4
+    n.links.loc[links_i, "start_up_cost"] = 17.6
+
+    links_i = n.links[n.links.carrier.isin(["nuclear", "coal", "lignite"])].index
+    n.links.loc[links_i, "ramp_limit_up"] = 0.4
+    n.links.loc[links_i, "ramp_limit_down"] = 0.4
+    n.links.loc[links_i, "p_min_pu"] = 0.5
+    n.links.loc[links_i, "min_up_time"] = 4
+    n.links.loc[links_i, "min_down_time"] = 4
+    n.links.loc[links_i, "start_up_cost"] = 35
+
+    links_i = n.links[n.links.carrier.isin(["nuclear"])].index
+    n.links.loc[links_i, "min_up_time"] = 6
+
+    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT", "nuclear", "coal", "lignite"])].index
+    n.links.loc[links_i, "committable"] = True
 
 
 def solve_network(n, tech_palette):
@@ -388,12 +413,18 @@ def solve_network(n, tech_palette):
         n.links.loc[coal_i, "p_min_pu"] = 0.9
     n.consistency_check()
 
-    # drop snapshots because of load shedding
-    to_drop = pd.Timestamp('2013-01-16 15:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
+    if snakemake.config["global"]["uc"]:
+        add_unit_committment(n)
+
+    linearized_uc = True if any(n.links.committable) else False
+
+
+    # # drop snapshots because of load shedding
+    # to_drop = pd.Timestamp('2013-01-16 15:00:00')
+    # new_snapshots = n.snapshots.drop(to_drop)
+    # n.set_snapshots(new_snapshots)
+    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    # n.snapshot_weightings.loc[final_sn] *= 2
 
     # # and another one
     # to_drop  = pd.Timestamp('2013-11-28 15:00:00')
@@ -403,11 +434,11 @@ def solve_network(n, tech_palette):
     # n.snapshot_weightings.loc[final_sn] *= 2
 
     # and another one
-    to_drop  = pd.Timestamp('2013-01-17 06:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
+    # to_drop  = pd.Timestamp('2013-01-17 06:00:00')
+    # new_snapshots = n.snapshots.drop(to_drop)
+    # n.set_snapshots(new_snapshots)
+    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    # n.snapshot_weightings.loc[final_sn] *= 2
 
 
     formulation = snakemake.config['solving']['options']['formulation']
@@ -415,20 +446,47 @@ def solve_network(n, tech_palette):
     solver_name = solver_options['name']
     solver_options["crossover"] = 0
 
-    n.lopf(pyomo=False,
+    n.optimize(
            extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver)
+           solver_logfile=snakemake.log.solver,
+           linearized_uc=linearized_uc)
 
     freeze_capacities(n)
 
-    n.lopf(pyomo=False,
+    # drop snapshots because of load shedding
+    to_drop = pd.Timestamp('2013-01-16 17:00:00')
+    new_snapshots = n.snapshots.drop(to_drop)
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
+
+    to_drop = pd.Timestamp('2013-01-17 17:00:00')
+    new_snapshots = n.snapshots.drop(to_drop)
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
+
+    to_drop = pd.Timestamp('2013-11-28 16:00:00')
+    new_snapshots = n.snapshots.drop(to_drop)
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
+
+    to_drop = pd.Timestamp('2013-11-28 17:00:00')
+    new_snapshots = n.snapshots.drop(to_drop)
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
+
+    n.optimize(
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver)
+           solver_logfile=snakemake.log.solver,
+           linearized_uc=linearized_uc)
 
 #%%
 if __name__ == "__main__":
