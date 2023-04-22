@@ -187,6 +187,8 @@ solving:
     Seed: 123
     AggFill: 0
     PreDual: 0
+    NodeMethod: 2 # algorithm used for MIP node relaxation, 2=barrier
+    MIPGap: 0.03    # 5% gap between (ObjBound-ObjVal)/ObjVal
     GURO_PAR_BARDENSETHRESH: 200
 
 

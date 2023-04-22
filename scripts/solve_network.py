@@ -362,7 +362,7 @@ def country_res_constraints(n, snakemake):
         #                            *n.snapshot_weightings.generators).sum()
         #     total_load += demand_electrolysis
 
-        print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
+        print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6, ndigits=2)} TWh")
         logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
 
         n.model.add_constraints(lhs == target*total_load, name=f"country_res_constraints_{ct}")
@@ -419,26 +419,6 @@ def solve_network(n, tech_palette):
     linearized_uc = True if any(n.links.committable) else False
 
 
-    # # drop snapshots because of load shedding
-    # to_drop = pd.Timestamp('2013-01-16 15:00:00')
-    # new_snapshots = n.snapshots.drop(to_drop)
-    # n.set_snapshots(new_snapshots)
-    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    # n.snapshot_weightings.loc[final_sn] *= 2
-
-    # # and another one
-    # to_drop  = pd.Timestamp('2013-11-28 15:00:00')
-    # new_snapshots = n.snapshots.drop(to_drop)
-    # n.set_snapshots(new_snapshots)
-    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    # n.snapshot_weightings.loc[final_sn] *= 2
-
-    # and another one
-    # to_drop  = pd.Timestamp('2013-01-17 06:00:00')
-    # new_snapshots = n.snapshots.drop(to_drop)
-    # n.set_snapshots(new_snapshots)
-    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    # n.snapshot_weightings.loc[final_sn] *= 2
 
 
     formulation = snakemake.config['solving']['options']['formulation']
@@ -452,41 +432,27 @@ def solve_network(n, tech_palette):
            solver_name=solver_name,
            solver_options=solver_options,
            solver_logfile=snakemake.log.solver,
-           linearized_uc=linearized_uc)
+           linearized_unit_commitment=linearized_uc)
 
     freeze_capacities(n)
 
+    to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
+               .sort_values().iloc[-4:].index)
+
     # drop snapshots because of load shedding
-    to_drop = pd.Timestamp('2013-01-16 17:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
+    for sn in to_drop:
+        new_snapshots = n.snapshots.drop(sn)
+        n.set_snapshots(new_snapshots)
+        final_sn = n.snapshots[n.snapshots<sn][-1]
+        n.snapshot_weightings.loc[final_sn] *= 2
 
-    to_drop = pd.Timestamp('2013-01-17 17:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
-
-    to_drop = pd.Timestamp('2013-11-28 16:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
-
-    to_drop = pd.Timestamp('2013-11-28 17:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
 
     n.optimize(
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
            solver_logfile=snakemake.log.solver,
-           linearized_uc=linearized_uc)
+           linearized_unit_commitment=linearized_uc)
 
 #%%
 if __name__ == "__main__":
@@ -531,6 +497,10 @@ if __name__ == "__main__":
                           snakemake.config['costs']['lifetime'],
                           year,
                           snakemake)
+
+    # adjust biomass CHP2 bus 2
+    chp_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
+    n.links.loc[chp_i, "bus2"] = ""
 
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:

@@ -181,29 +181,25 @@ def res_constraints(n, snakemake):
     name = snakemake.config['ci']['name']
     policy = snakemake.wildcards.policy
 
+    weights = n.snapshot_weightings["generators"]
+
     res_gens = [name + " " + g for g in ci['res_techs']]
 
-    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                              index = n.snapshots,
-                              columns = res_gens)
-    res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
 
-    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum()
 
-    load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights).sum()
 
-    lhs = res + "\n" + load
+    lhs = res - electrolysis
 
-    con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+    n.model.add_constraints(lhs >= 0, name="RES_annual_matching")
+
 
     allowed_excess = float(policy.replace("res","").replace("p","."))
-    load = join_exprs(linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis)))
 
-    lhs = res + "\n" + load
+    lhs = res - (electrolysis*allowed_excess)
 
-
-    con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess',
-                             'REStarget_excess')
+    n.model.add_constraints(lhs <= 0, name="RES_annual_matching_excess")
 
 
 def monthly_constraints(n, snakemake):
@@ -211,59 +207,48 @@ def monthly_constraints(n, snakemake):
 
     ci = snakemake.config['ci']
     name = ci['name']
-    policy = snakemake.wildcards.policy
 
     res_gens = [name + " " + g for g in ci['res_techs']]
+    weights = n.snapshot_weightings["generators"]
 
-    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                              index = n.snapshots,
-                              columns = res_gens)
-    res = linexpr((weightings,get_var(n, "Generator", "p")[res_gens])).sum(axis=1) # single line sum
-    res = res.groupby(res.index.month).sum()
+    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum("Generator")
+    res = res.groupby("snapshot.month").sum()
 
-    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
+    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights)
     # allowed_excess = float(policy.replace("monthly","").replace("p","."))
     allowed_excess = 1
-    load = linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis))
+    load = electrolysis.groupby("snapshot.month").sum() * -allowed_excess
+    lhs = res + load
 
-    load = load.groupby(load.index.month).sum()
+    n.model.add_constraints(lhs == 0, name="RES_monthly_matching")
 
-    for i in range(len(res.index)):
-        lhs = res.iloc[i] + "\n" + load.iloc[i]
-
-        con = define_constraints(n, lhs, '==', 0., f'RESconstraints_{i}',f'REStarget_{i}')
 
 def excess_constraints(n, snakemake):
 
     ci = snakemake.config['ci']
     name = ci['name']
-
-    res_gens = [f"{name} onwind",f"{name} solar"]
-
     policy = snakemake.wildcards.policy
 
-    weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
-                              index = n.snapshots,
-                              columns = res_gens)
-    res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+    res_gens = [name + " " + g for g in ci['res_techs']]
+    weights = n.snapshot_weightings["generators"]
 
-    electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
-    load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum("Generator")
 
-    lhs = res + "\n" + load
+    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights)
+
 
     # there is no import so I think we don't need this constraint
     # con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
 
     allowed_excess = float(policy.replace("exl","").replace("p","."))
 
-    load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
 
-    lhs = res + "\n" + load
+    lhs = res - electrolysis*allowed_excess
 
-    con = define_constraints(n, lhs, '<=', 0., 'RESconstraints_excess','REStarget_excess')
+    n.model.add_constraints(lhs <= 0, name="RES_hourly_excess")
+
 
 def solve(policy, n):
 
@@ -283,22 +268,27 @@ def solve(policy, n):
 
     fn = getattr(snakemake.log, 'memory', None)
 
+    linearized_uc = True if any(n.links.committable) else False
+
     solver_options = snakemake.config["solving"]["solver"]
     solver_name = solver_options["name"]
-    result, message = n.lopf(pyomo=False,
+    result, message = n.optimize(
            extra_functionality=extra_functionality,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver)
+           solver_logfile=snakemake.log.solver,
+           linearized_unit_commitment=linearized_uc)
+
 
     if result != "ok" or message != "optimal":
         logger.info(f"solver ended with {result} and {message}, so re-running")
         solver_options["crossover"] = 1
-        result, message = n.lopf(pyomo=False,
+        result, message = n.optimize(
                extra_functionality=extra_functionality,
                solver_name=solver_name,
                solver_options=solver_options,
-               solver_logfile=snakemake.log.solver)
+               solver_logfile=snakemake.log.solver,
+               linearized_unit_commitment=linearized_uc)
 
 
 
@@ -312,7 +302,7 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="res1p0", palette='p1', zone='DE',
+                                policy="exl1p0", palette='p1', zone='DE',
                                 year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
