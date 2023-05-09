@@ -349,18 +349,18 @@ def country_res_constraints(n, snakemake):
         total_load = (n.loads_t.p_set[grid_loads].sum(axis=1)*weights).sum() # number
 
         # add for ct in zone electrolysis demand to load if not "reference" scenario
-        # if (ct==zone) and (f"{ci_name}" in n.buses.index):
+        if (ct==zone) and (f"{ci_name}" in n.buses.index):
 
-        #     logger.info("Consider electrolysis demand for RES target.")
-        #     # H2 demand in zone
-        #     offtake_volume = float(snakemake.wildcards.offtake_volume)
-        #     # efficiency of electrolysis
-        #     efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+            logger.info("Consider electrolysis demand for RES target.")
+            # H2 demand in zone
+            offtake_volume = float(snakemake.wildcards.offtake_volume)
+            # efficiency of electrolysis
+            efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
 
-        #     # electricity demand of electrolysis
-        #     demand_electrolysis = (offtake_volume/efficiency
-        #                            *n.snapshot_weightings.generators).sum()
-        #     total_load += demand_electrolysis
+            # electricity demand of electrolysis
+            demand_electrolysis = (offtake_volume/efficiency
+                                    *n.snapshot_weightings.generators).sum()
+            total_load += demand_electrolysis
 
         print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6, ndigits=2)} TWh")
         logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
