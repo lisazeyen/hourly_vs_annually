@@ -451,7 +451,7 @@ def solve_network(n, tech_palette):
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver,
+           log_fn=snakemake.log.solver,
            linearized_unit_commitment=linearized_uc)
 
 #%%

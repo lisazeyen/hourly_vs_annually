@@ -276,7 +276,7 @@ def solve(policy, n):
            extra_functionality=extra_functionality,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver,
+           log_fn=snakemake.log.solver,
            linearized_unit_commitment=linearized_uc)
 
 
@@ -287,7 +287,7 @@ def solve(policy, n):
                extra_functionality=extra_functionality,
                solver_name=solver_name,
                solver_options=solver_options,
-               solver_logfile=snakemake.log.solver,
+               log_fn=snakemake.log.solver,
                linearized_unit_commitment=linearized_uc)
 
 
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="exl1p0", palette='p1', zone='DE',
+                                policy="ref", palette='p1', zone='DE',
                                 year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
