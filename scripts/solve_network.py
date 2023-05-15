@@ -338,6 +338,7 @@ def country_res_constraints(n, snakemake):
         gens =  n.model['Generator-p'].loc[:,country_res_gens] * weights
         links = n.model['Link-p'].loc[:,country_res_links] * n.links.loc[country_res_links, "efficiency"] * weights
         sus = n.model['StorageUnit-p_dispatch'].loc[:,country_res_storage_units] * weights
+
         lhs = gens.sum() + sus.sum() + links.sum()
 
         target = timescope(ct, year, snakemake)["country_res_target"]
@@ -398,6 +399,32 @@ def add_unit_committment(n):
     n.links.loc[links_i, "committable"] = True
 
 
+def average_every_nhours(n, offset):
+    
+    if "H" in offset:
+        m = n.copy(with_time=False)
+        logger.info(f"Resampling the network to {offset}")
+    
+        snapshot_weightings = n.snapshot_weightings.resample(offset).sum()
+        m.set_snapshots(snapshot_weightings.index)
+        m.snapshot_weightings = snapshot_weightings
+    
+        for c in n.iterate_components():
+            pnl = getattr(m, c.list_name + "_t")
+            for k, df in c.pnl.items():
+                if not df.empty:
+                    pnl[k] = df.resample(offset).mean()
+        return m
+    if "sn" in offset:
+        sn = int(offset.replace("sn", ""))
+        logger.info(f"Aggregate temporally to every {sn} snapshot")
+        n.set_snapshots(n.snapshots[::sn])
+        weights = pd.DataFrame(sn, index=n.snapshot_weightings.index,
+                               columns=n.snapshot_weightings.columns)
+        n.snapshot_weightings = weights
+
+        return n
+    
 def solve_network(n, tech_palette):
 
     clean_techs, storage_techs, storage_chargers, storage_dischargers = palette(tech_palette)
@@ -425,13 +452,17 @@ def solve_network(n, tech_palette):
     solver_options = snakemake.config['solving']['solver']
     solver_name = solver_options['name']
     solver_options["crossover"] = 0
+    
+    # testing
+    nhours = snakemake.config["scenario"]["temporal_resolution"]
+    n = average_every_nhours(n, nhours)
 
     n.optimize(
            extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver,
+           log_fn=snakemake.log.solver,
            linearized_unit_commitment=linearized_uc)
 
     freeze_capacities(n)
@@ -448,6 +479,7 @@ def solve_network(n, tech_palette):
 
 
     n.optimize(
+           extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
@@ -501,6 +533,8 @@ if __name__ == "__main__":
     # adjust biomass CHP2 bus 2
     chp_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
     n.links.loc[chp_i, "bus2"] = ""
+    remove_i = n.links[n.links.carrier.str.contains("biomass boiler")].index
+    n.mremove("Link", remove_i)
 
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
