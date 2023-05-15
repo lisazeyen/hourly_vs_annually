@@ -13,12 +13,12 @@ if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
+        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
                                    zone='DE', year='2025',  participation='10',
                                    policy="ref")
-        os.chdir("/home/lisa/mnt/hourly_vs_annually/")
+        os.chdir("/home/lisa/Documents/hourly_vs_annually/")
 
 LHV_H2 = 33.33 # lower heating value [kWh/kg_H2]
 
@@ -469,6 +469,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     compare_p = [rename_scenarios[scen] if scen in rename_scenarios.keys()
                   else scen for scen in [compare_p]]
     emissions_v = emissions_v.groupby(level=[0,1]).first()
+    emissions_v = emissions_v.reindex(wished_order, level=1)
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
@@ -487,6 +488,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     y_min = 0
     y_max = 0
     emissions_s = emissions_s.groupby(level=[0,1], axis=1).first()
+    emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
