@@ -114,13 +114,19 @@ def plot_consequential_emissions_c(supply_energy, wished_policies,
         ax[i].set_axisbelow(True)
         if em_p[em_p<0].sum().min()<y_min: y_min = em_p[em_p<0].sum().min()
         if em_p[em_p>0].sum().max()>y_max: y_max = em_p[em_p>0].sum().max()
+        # increase space
+        box = ax[i].get_position()
+        if i >= 3:  # adjust from the 4th subplot onwards
+            box.x0 += 0.05  # add space to the left of the subplot
+            box.x1 += 0.05  # always add space to the right for consistency
+        ax[i].set_position(box)
 
 
     ax[0].set_ylim([1.1*y_min, 1.1*y_max])
     ax[0].set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
     ax[0].text(1.8, 1.3, 'Netherlands 2025', horizontalalignment='center',
                verticalalignment='center', transform=ax[0].transAxes, fontsize=14)
-    ax[0].text(5.4, 1.3, 'Germany 2030', horizontalalignment='center',
+    ax[0].text(5.9, 1.3, 'Germany 2030', horizontalalignment='center',
                verticalalignment='center', transform=ax[0].transAxes, fontsize=14)
     plt.legend(fontsize=9, bbox_to_anchor=(1,1))
 
