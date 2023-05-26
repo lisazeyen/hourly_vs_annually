@@ -336,7 +336,7 @@ def country_res_constraints(n, snakemake):
 
 
         gens =  n.model['Generator-p'].loc[:,country_res_gens] * weights
-        links = n.model['Link-p'].loc[:,country_res_links] * n.links.loc[country_res_links, "efficiency"] * weights
+        links = n.model['Link-p'].loc[:,country_res_links] * eff_links * weights
         sus = n.model['StorageUnit-p_dispatch'].loc[:,country_res_storage_units] * weights
 
         lhs = gens.sum() + sus.sum() + links.sum()
@@ -350,23 +350,23 @@ def country_res_constraints(n, snakemake):
         total_load = (n.loads_t.p_set[grid_loads].sum(axis=1)*weights).sum() # number
 
         # add for ct in zone electrolysis demand to load if not "reference" scenario
-        if (ct==zone) and (f"{ci_name}" in n.buses.index):
+        # if (ct==zone) and (f"{ci_name}" in n.buses.index):
 
-            logger.info("Consider electrolysis demand for RES target.")
-            # H2 demand in zone
-            offtake_volume = float(snakemake.wildcards.offtake_volume)
-            # efficiency of electrolysis
-            efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+        #     logger.info("Consider electrolysis demand for RES target.")
+        #     # H2 demand in zone
+        #     offtake_volume = float(snakemake.wildcards.offtake_volume)
+        #     # efficiency of electrolysis
+        #     efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
 
-            # electricity demand of electrolysis
-            demand_electrolysis = (offtake_volume/efficiency
-                                    *n.snapshot_weightings.generators).sum()
-            total_load += demand_electrolysis
+        #     # electricity demand of electrolysis
+        #     demand_electrolysis = (offtake_volume/efficiency
+        #                             *n.snapshot_weightings.generators).sum()
+        #     total_load += demand_electrolysis
 
         print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6, ndigits=2)} TWh")
         logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
 
-        n.model.add_constraints(lhs == target*total_load, name=f"country_res_constraints_{ct}")
+        n.model.add_constraints(lhs == target*total_load, name=f"GlobalConstraint-country_res_constraints_{ct}")
 
 
 def add_unit_committment(n):
@@ -374,27 +374,53 @@ def add_unit_committment(n):
     Add unit commitment for conventionals
     based on
     https://discord.com/channels/914472852571426846/1042037164088766494/1042395972438868030
+    from DIW
+    [1] https://www.diw.de/documents/publikationen/73/diw_01.c.424566.de/diw_datadoc_2013-068.pdf
+    
+    [2] update with p.48 https://www.agora-energiewende.de/fileadmin/Projekte/2017/Flexibility_in_thermal_plants/115_flexibility-report-WEB.pdf
+    
+    [3] SI Schill et al. p.26 https://static-content.springer.com/esm/art%3A10.1038%2Fnenergy.2017.50/MediaObjects/41560_2017_BFnenergy201750_MOESM196_ESM.pdf
     """
     logger.info("add unit commitment")
-    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT"])].index
-    n.links.loc[links_i, "ramp_limit_up"] = 0.5
-    n.links.loc[links_i, "ramp_limit_down"] = 0.5
-    n.links.loc[links_i, "p_min_pu"] = 0.4
-    n.links.loc[links_i, "min_up_time"] = 6
-    n.links.loc[links_i, "min_down_time"] = 4
-    n.links.loc[links_i, "start_up_cost"] = 17.6
-
-    links_i = n.links[n.links.carrier.isin(["nuclear", "coal", "lignite"])].index
-    n.links.loc[links_i, "ramp_limit_up"] = 0.4
-    n.links.loc[links_i, "ramp_limit_down"] = 0.4
-    n.links.loc[links_i, "p_min_pu"] = 0.5
-    n.links.loc[links_i, "min_up_time"] = 4
-    n.links.loc[links_i, "min_down_time"] = 4
-    n.links.loc[links_i, "start_up_cost"] = 35
-
+    # OCGT
+    links_i = n.links[n.links.carrier.isin(["OCGT"])].index
+    n.links.loc[links_i, "p_min_pu"] = 0.2  # [3] 
+    n.links.loc[links_i, "start_up_cost"] = 24 * 0.4 # [3] start-up depreciation costs Eur/MW
+    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 8-12% per min
+    # cold/warm start up time within minutes, complete ramp up within one hour
+    
+    # CCGT
+    links_i = n.links[n.links.carrier.isin(["CCGT"])].index
+    n.links.loc[links_i, "p_min_pu"] = 0.45  # [2] mean of Minimum load Most commonly used power plants
+    n.links.loc[links_i, "start_up_cost"] = 60 * 0.57 # [3] start-up depreciation costs Eur/MW,
+    n.links.loc[links_i, "min_up_time"] = 3  # mean of "Cold start-up time" [2] Most commonly used power plants
+    n.links.loc[links_i, "min_down_time"] = 2   # [3] Minimum offtime [hours]
+    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 2-4% per min
+    
+    # coal
+    links_i = n.links[n.links.carrier.isin(["coal"])].index
+    n.links.loc[links_i, "p_min_pu"] = 0.325  # [2] mean of Minimum load Most commonly used power plants
+    n.links.loc[links_i, "start_up_cost"] =  49 * 0.33 # [3] start-up depreciation costs Eur/MW, large plant
+    n.links.loc[links_i, "min_up_time"] = 5  # mean of "Cold start-up time" [2] Most commonly used power plants
+    n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
+    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1.5-4% per minute
+    
+    # lignite
+    links_i = n.links[n.links.carrier.isin(["lignite"])].index
+    n.links.loc[links_i, "p_min_pu"] = 0.4  # [3]
+    n.links.loc[links_i, "start_up_cost"] = 49 * 0.33 # [3] start-up depreciation costs Eur/MW, large plant
+    n.links.loc[links_i, "min_up_time"] = 7  # mean of "Cold start-up time" [2] Most commonly used power plants
+    n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
+    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1-2% per minute
+    
+    # nuclear
     links_i = n.links[n.links.carrier.isin(["nuclear"])].index
-    n.links.loc[links_i, "min_up_time"] = 6
+    n.links.loc[links_i, "p_min_pu"] = 0.5 # [3]
+    n.links.loc[links_i, "start_up_cost"] = 50 * 0.33 # [3]    start-up depreciation costs Eur/MW
+    n.links.loc[links_i, "min_up_time"] = 6   # [1]
+    n.links.loc[links_i, "min_down_time"] = 10  # [3] Minimum offtime [hours]
 
+    
     links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT", "nuclear", "coal", "lignite"])].index
     n.links.loc[links_i, "committable"] = True
 
@@ -433,6 +459,11 @@ def solve_network(n, tech_palette):
 
         add_battery_constraints(n)
         country_res_constraints(n, snakemake)
+    
+    def extra_functionality_after(n, snapshots):
+
+        add_battery_constraints(n)
+        # country_res_constraints(n, snakemake)
 
 
     if snakemake.config["global"]["must_run"]:
@@ -470,21 +501,22 @@ def solve_network(n, tech_palette):
     to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
                .sort_values().iloc[-4:].index)
 
-    # drop snapshots because of load shedding
-    for sn in to_drop:
-        new_snapshots = n.snapshots.drop(sn)
-        n.set_snapshots(new_snapshots)
-        final_sn = n.snapshots[n.snapshots<sn][-1]
-        n.snapshot_weightings.loc[final_sn] *= 2
-
+    # # drop snapshots because of load shedding
+    # for sn in to_drop:
+    #     new_snapshots = n.snapshots.drop(sn)
+    #     n.set_snapshots(new_snapshots)
+    #     final_sn = n.snapshots[n.snapshots<sn][-1]
+    #     n.snapshot_weightings.loc[final_sn] *= 2
+    
+    n.export_to_netcdf(snakemake.output.prenetwork)
 
     n.optimize(
-           extra_functionality=extra_functionality,
-           formulation=formulation,
-           solver_name=solver_name,
-           solver_options=solver_options,
-           log_fn=snakemake.log.solver,
-           linearized_unit_commitment=linearized_uc)
+            extra_functionality=extra_functionality_after,
+            formulation=formulation,
+            solver_name=solver_name,
+            solver_options=solver_options,
+            log_fn=snakemake.log.solver,
+            linearized_unit_commitment=linearized_uc)
 
 #%%
 if __name__ == "__main__":
@@ -550,14 +582,14 @@ if __name__ == "__main__":
         offtake_volume = float(snakemake.wildcards.offtake_volume)
         # efficiency of electrolysis
         efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
-        if snakemake.config["scenario"]["h2_demand_added"]:
-            logger.info("Add electrolysis demand.")
-            load_elec = offtake_volume/efficiency
-            n.add("Load",
-                  f"{geoscope(n,zone, area)['node']} electrolysis demand",
-                  bus=geoscope(n,zone, area)['node'],
-                  p_set=pd.Series(load_elec, index=n.snapshots),
-                  carrier="electricity")
+        # if snakemake.config["scenario"]["h2_demand_added"]:
+        #     logger.info("Add electrolysis demand.")
+        #     load_elec = offtake_volume/efficiency
+        #     n.add("Load",
+        #           f"{geoscope(n,zone, area)['node']} electrolysis demand",
+        #           bus=geoscope(n,zone, area)['node'],
+        #           p_set=pd.Series(load_elec, index=n.snapshots),
+        #           carrier="electricity")
 
         solve_network(n, tech_palette)
 
