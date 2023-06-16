@@ -4,7 +4,8 @@ from solve_network import (prepare_costs, palette, strip_network,
                            timescope, shutdown_lineexp, add_battery_constraints,
                            limit_resexp,set_co2_policy,
                            phase_outs, reduce_biomass_potential,
-                           cost_parametrization, country_res_constraints)
+                           cost_parametrization, country_res_constraints,
+                           average_every_nhours)
 from resolve_network import (add_H2, add_dummies, res_constraints,
                              monthly_constraints, excess_constraints)
 
@@ -57,13 +58,29 @@ def solve_network(n, tech_palette):
     solver_options = snakemake.config['solving']['solver']
     solver_name = solver_options['name']
     solver_options["crossover"] = 0
+    
+    linearized_uc = True if any(n.links.committable) else False
 
-    n.lopf(pyomo=False,
+
+    
+    # testing
+    nhours = snakemake.config["scenario"]["temporal_resolution"]
+    n = average_every_nhours(n, nhours)
+
+    n.optimize(
            extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           solver_logfile=snakemake.log.solver)
+           log_fn=snakemake.log.solver,
+           linearized_unit_commitment=linearized_uc)
+
+    # n.lopf(pyomo=False,
+    #        extra_functionality=extra_functionality,
+    #        formulation=formulation,
+    #        solver_name=solver_name,
+    #        solver_options=solver_options,
+    #        solver_logfile=snakemake.log.solver)
 
 #%%
 if __name__ == "__main__":
