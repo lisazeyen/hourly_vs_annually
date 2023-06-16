@@ -12,7 +12,7 @@ n_2030: 'input/elec_s_37_lv1.0__1H-B-solar+p3_2025.nc'
 ###################
 # Scenario controls
 
-run: 'hourly'
+run: 'test_newUC_together'
 
 #wildcards
 scenario:
@@ -30,9 +30,10 @@ scenario:
   offtake_volume: [3200] # [2233,3200, 6700]  # [MWh_H2 per h] fixed offtake volume per hour, 10 GB planned in DE by 2030 if run 100% 10GB*0.67=6700MWh/h
   storage: ["flexibledemand", "underground", "mtank", "htank", "nostore"]  # storage type at google node
   h2_demand_added: False
+  temporal_resolution: "1H"
 
 
-solving_option: "twostep"   # options ["twostep", "together"]
+solving_option: "together"   # options ["twostep", "together"]
 # local electrolysis production
 ci:
   name: "CI"
@@ -136,17 +137,17 @@ phase_out:
 res_target_2025:
   # https://energy.ec.europa.eu/system/files/2019-03/ger_draft_necp_eng_0.pdf
   IE: 0.47
-  DK: 0.9
+  DK: 0.85  # p.3 https://ens.dk/sites/ens.dk/files/Basisfremskrivning/kf23_sektornotat_8b_forbrug_af_el.pdf
   DE: 0.55
-  NL: 0.35    # interpolated from 2020 wind+solar 19%, bioenergy 6% to 2030 target
+  NL: 0.49    # interpolated from 2020 wind+solar 19%, bioenergy 6% to 2030 target
   AT: 0.90      # 79% overall renewables in 2020 -> target 100% 2030  https://static.agora-energiewende.de/fileadmin/Projekte/2021/2020_01_EU-Annual-Review_2020/Data-file-Europe-Power-Sector-2020.xlsx
-  BE: 0.335  # 20% (2020) wind + solar, 6% Others
+  BE: 0.323  # p.63 https://energy.ec.europa.eu/system/files/2020-09/be_final_necp_parta_en_0.pdf, 11.156 GWh = 32.3%
   BG: 0.21    # p. 59 Figure 10 https://energy.ec.europa.eu/system/files/2020-06/bg_final_necp_main_en_0.pdf
   # CH:
   CZ: 0.14     # 4% wind+solar 2020, 12% renewable overall (2020)
   HR: 0.56   # linear interpolated Table 2-1 p.54 https://energy.ec.europa.eu/system/files/2020-01/hr_final_necp_main_en_0.pdf
   FR: 0.32         # 10% wind+solar 2020, 23% renewable overall
-  GB: 0.685         # 29% wind + solar 2020, 42% renewable overall
+  GB: 0.535         # linear interpolated from 2020: 29% wind + solar 2020, 42% renewable overall to 2030 target
   # LU:       # 39% wind + solar 2020, 72% renewable overall
   # NO:
   PL: 0.245       # 11% wind + solar 2020, 17% renewable overall
@@ -155,18 +156,17 @@ res_target_2025:
   PT: 0.69   # p.41 Table 9 https://energy.ec.europa.eu/system/files/2020-06/pt_final_necp_main_en_0.pdf
 res_target_2030:
   IE: 0.7
-  DK: 1.1
+  DK: 1.17 # p.3 https://ens.dk/sites/ens.dk/files/Basisfremskrivning/kf23_sektornotat_8b_forbrug_af_el.pdf
   DE: 0.80
-  NL: 0.50 #https://climate-laws.org/geographies/netherlands/policies/national-climate-agreement
+  NL: 0.73 # p.23 https://energy.ec.europa.eu/system/files/2021-01/staff_working_document_assessment_necp_netherlands_en_0.pdf
   AT: 1.0 # https://windeurope.org/newsroom/news/austria-aims-to-have-100-renewable-electricity-by-2030/
-  BE: 0.404 # 32% https://windeurope.org/newsroom/news/belgium-energy-and-climate-plan-proposes-renewable-energy-target-of-18-3-by-2030/
+  BE: 0.37 # p.63 https://energy.ec.europa.eu/system/files/2020-09/be_final_necp_parta_en_0.pdf, 12.78 GWh = 37%
   BG: 0.27  # p.59 Figure 10 https://energy.ec.europa.eu/system/files/2020-06/bg_final_necp_main_en_0.pdf
   HR: 0.64  # p.54 Table 2-1 https://energy.ec.europa.eu/system/files/2020-01/hr_final_necp_main_en_0.pdf
   # CH:
   CZ: 0.17
   FR: 0.4
-  GB: 0.95 # https://www.edie.net/energy-security-strategy-uk-targets-95-low-carbon-electricity-mix-by-2030-but-will-increase-oil-and-gas-production/
-  # LU:
+  GB: 0.65 # p.27 https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/938539/NIS_Report_Web_Accessible.pdf
   # NO:
   PL: 0.32  # table 1.1 https://iea.blob.core.windows.net/assets/b9ea5a7d-3e41-4318-a69e-f7d456ebb118/Poland2022.pdf
   ES: 0.74   # p.10 https://energy.ec.europa.eu/system/files/2021-01/staff_working_document_assessment_necp_spain_en_0.pdf
@@ -183,7 +183,10 @@ solving:
     threads: 8
     method: 2 # barrier
     crossover: 0
-    BarConvTol: 1.e-5
+    # NumericFocus: 3       # Favour numeric stability over speed
+    BarConvTol: 1.e-4
+    FeasibilityTol: 1.e-4
+    OptimalityTol: 1.e-4
     Seed: 123
     AggFill: 0
     PreDual: 0
