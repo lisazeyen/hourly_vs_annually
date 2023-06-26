@@ -387,41 +387,68 @@ def add_unit_committment(n):
     n.links.loc[links_i, "p_min_pu"] = 0.2  # [3] 
     n.links.loc[links_i, "start_up_cost"] = 24 * 0.4 # [3] start-up depreciation costs Eur/MW
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 8-12% per min
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.2  # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.2  # [4] p.41
     # cold/warm start up time within minutes, complete ramp up within one hour
     
     # CCGT
     links_i = n.links[n.links.carrier.isin(["CCGT"])].index
     n.links.loc[links_i, "p_min_pu"] = 0.45  # [2] mean of Minimum load Most commonly used power plants
-    n.links.loc[links_i, "start_up_cost"] = 60 * 0.57 # [3] start-up depreciation costs Eur/MW,
+    n.links.loc[links_i, "start_up_cost"] = 60 * 0.57 # [3] start-up depreciation costs Eur/MW, in [4] 144
     n.links.loc[links_i, "min_up_time"] = 3  # mean of "Cold start-up time" [2] Most commonly used power plants
     n.links.loc[links_i, "min_down_time"] = 2   # [3] Minimum offtime [hours]
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 2-4% per min
-    
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.45  # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.45 # [4] p.41
+ 
     # coal
     links_i = n.links[n.links.carrier.isin(["coal"])].index
     n.links.loc[links_i, "p_min_pu"] = 0.325  # [2] mean of Minimum load Most commonly used power plants
-    n.links.loc[links_i, "start_up_cost"] =  49 * 0.33 # [3] start-up depreciation costs Eur/MW, large plant
+    n.links.loc[links_i, "start_up_cost"] =  108 * 0.33 # [4] p.41
     n.links.loc[links_i, "min_up_time"] = 5  # mean of "Cold start-up time" [2] Most commonly used power plants
     n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1.5-4% per minute
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.38 # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.38 # [4] p.41
     
     # lignite
     links_i = n.links[n.links.carrier.isin(["lignite"])].index
     n.links.loc[links_i, "p_min_pu"] = 0.4  # [3]
-    n.links.loc[links_i, "start_up_cost"] = 49 * 0.33 # [3] start-up depreciation costs Eur/MW, large plant
+    n.links.loc[links_i, "start_up_cost"] = 58 * 0.33 # [4] p.41
     n.links.loc[links_i, "min_up_time"] = 7  # mean of "Cold start-up time" [2] Most commonly used power plants
     n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1-2% per minute
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.4 # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.4 # [4] p.41
     
     # nuclear
     links_i = n.links[n.links.carrier.isin(["nuclear"])].index
     n.links.loc[links_i, "p_min_pu"] = 0.5 # [3]
     n.links.loc[links_i, "start_up_cost"] = 50 * 0.33 # [3]    start-up depreciation costs Eur/MW
     n.links.loc[links_i, "min_up_time"] = 6   # [1]
+    n.links.loc[links_i, "ramp_limit_up"] = 0.3  # [4]
     n.links.loc[links_i, "min_down_time"] = 10  # [3] Minimum offtime [hours]
-
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.5  # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.5 # [4] p.41
     
-    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT", "nuclear", "coal", "lignite"])].index
+    # oil
+    links_i = n.links[n.links.carrier.isin(["oil"])].index
+    n.links.loc[links_i, "p_min_pu"] = 0.2 # [4]
+    n.links.loc[links_i, "start_up_cost"] = 1 * 0.35 # [4]    start-up depreciation costs Eur/MW
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.2  # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.2 # [4] p.41
+
+    # biomass
+    links_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
+    n.links.loc[links_i, "p_min_pu"] = 0.38 # [4]
+    n.links.loc[links_i, "start_up_cost"] = 78 * 0.27 # [4]
+    n.links.loc[links_i, "min_up_time"] = 2   # [4]
+    n.links.loc[links_i, "min_down_time"] = 2  # [4]
+    n.links.loc[links_i, "ramp_limit_start_up"] = 0.38  # [4] p.41
+    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.38 # [4] p.41
+    
+    
+    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT", "nuclear", "coal", "lignite", "oil","urban central solid biomass CHP"])].index
     n.links.loc[links_i, "committable"] = True
 
 
