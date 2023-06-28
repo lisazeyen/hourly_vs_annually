@@ -5,7 +5,7 @@ from solve_network import (prepare_costs, palette, strip_network,
                            limit_resexp,set_co2_policy,
                            phase_outs, reduce_biomass_potential,
                            cost_parametrization, country_res_constraints,
-                           average_every_nhours)
+                           average_every_nhours, add_unit_committment)
 from resolve_network import (add_H2, add_dummies, res_constraints,
                              monthly_constraints, excess_constraints)
 
@@ -48,17 +48,20 @@ def solve_network(n, tech_palette):
     n.consistency_check()
 
     # drop snapshots because of load shedding
-    to_drop = pd.Timestamp('2013-01-16 15:00:00')
-    new_snapshots = n.snapshots.drop(to_drop)
-    n.set_snapshots(new_snapshots)
-    final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    n.snapshot_weightings.loc[final_sn] *= 2
+    # to_drop = pd.Timestamp('2013-01-16 15:00:00')
+    # new_snapshots = n.snapshots.drop(to_drop)
+    # n.set_snapshots(new_snapshots)
+    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    # n.snapshot_weightings.loc[final_sn] *= 2
 
     formulation = snakemake.config['solving']['options']['formulation']
     solver_options = snakemake.config['solving']['solver']
     solver_name = solver_options['name']
     solver_options["crossover"] = 0
     
+    if snakemake.config["global"]["uc"]:
+         add_unit_committment(n)
+         
     linearized_uc = True if any(n.links.committable) else False
 
 
@@ -124,6 +127,13 @@ if __name__ == "__main__":
     # import network -------------------------------------------------------
     n = pypsa.Network(timescope(zone, year, snakemake)['network_file'],
                       override_component_attrs=override_component_attrs())
+    
+    # adjust biomass CHP2 bus 2
+    chp_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
+    n.links.loc[chp_i, "bus2"] = ""
+    remove_i = n.links[n.links.carrier.str.contains("biomass boiler")].index
+    n.mremove("Link", remove_i)
+
 
     Nyears = 1 # years in simulation
     costs = prepare_costs(timescope(zone, year, snakemake)['costs_projection'],
