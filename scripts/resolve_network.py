@@ -302,7 +302,7 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="ref", palette='p1', zone='DE',
+                                policy="grd", palette='p1', zone='DE',
                                 year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
@@ -333,6 +333,10 @@ if __name__ == "__main__":
     logger.info(f"solving with node: {node}")
 
     freeze_capacities(n)
+    
+    if len(n.generators[n.generators.p_nom_extendable])>5:
+        import sys
+        sys.exit("freezing of capacity did not work as intended")
 
     add_H2(n, snakemake)
 
