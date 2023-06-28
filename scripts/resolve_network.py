@@ -313,6 +313,7 @@ if __name__ == "__main__":
 
     n = pypsa.Network(snakemake.input.base_network,
                       override_component_attrs=override_component_attrs())
+    
 
 
     policy = snakemake.wildcards.policy
