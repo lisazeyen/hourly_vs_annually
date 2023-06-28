@@ -273,6 +273,10 @@ def freeze_capacities(n):
         df = getattr(n,name)
         df[attr + "_nom_extendable"] = False
         df[attr + "_nom"] = df[attr + "_nom_opt"]
+        
+    # allow larger fossil fuel usage
+    gen_i = n.generators[n.generators.index.str.contains("EU")].index
+    n.generators.loc[gen_i, "p_nom_extendable"] = True
 
     #allow more emissions
     n.stores.at["co2 atmosphere","e_nom"] *=2
@@ -514,6 +518,8 @@ def solve_network(n, tech_palette):
     # testing
     nhours = snakemake.config["scenario"]["temporal_resolution"]
     n = average_every_nhours(n, nhours)
+    
+    n.export_to_netcdf(snakemake.output.prenetwork)
 
     n.optimize(
            extra_functionality=extra_functionality,
@@ -524,9 +530,14 @@ def solve_network(n, tech_palette):
            linearized_unit_commitment=linearized_uc)
 
     freeze_capacities(n)
+    
+    if len(n.generators[n.generators.p_nom_extendable])>5:
+        import sys
+        sys.exit("freezing of capacity did not work as intended")
 
-    to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
-               .sort_values().iloc[-4:].index)
+
+    # to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
+    #            .sort_values().iloc[-4:].index)
 
     # # drop snapshots because of load shedding
     # for sn in to_drop:
@@ -535,15 +546,20 @@ def solve_network(n, tech_palette):
     #     final_sn = n.snapshots[n.snapshots<sn][-1]
     #     n.snapshot_weightings.loc[final_sn] *= 2
     
-    n.export_to_netcdf(snakemake.output.prenetwork)
 
-    n.optimize(
-            extra_functionality=extra_functionality_after,
-            formulation=formulation,
-            solver_name=solver_name,
-            solver_options=solver_options,
-            log_fn=snakemake.log.solver,
-            linearized_unit_commitment=linearized_uc)
+    
+    # if len(n.generators[n.generators.p_nom_extendable])>5:
+    #     import sys
+    #     sys.exit("freezing of capacity did not work as intended")
+
+
+    # n.optimize(
+    #         extra_functionality=extra_functionality_after,
+    #         formulation=formulation,
+    #         solver_name=solver_name,
+    #         solver_options=solver_options,
+    #         log_fn=snakemake.log.solver,
+    #         linearized_unit_commitment=linearized_uc)
 
 #%%
 if __name__ == "__main__":
@@ -606,9 +622,9 @@ if __name__ == "__main__":
         cost_parametrization(n, snakemake)
         set_co2_policy(n, snakemake, costs)
 
-        offtake_volume = float(snakemake.wildcards.offtake_volume)
+        # offtake_volume = float(snakemake.wildcards.offtake_volume)
         # efficiency of electrolysis
-        efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+        # efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
         # if snakemake.config["scenario"]["h2_demand_added"]:
         #     logger.info("Add electrolysis demand.")
         #     load_elec = offtake_volume/efficiency
