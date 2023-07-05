@@ -8,22 +8,23 @@ Created on Mon Mar 27 17:15:45 2023
 import pandas as pd
 import pypsa
 import matplotlib.pyplot as plt
+import numpy as np
 # from plot_offtake import rename_scenarios, rename_techs
 
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
+        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
-                                   zone='DE', year='2030',  participation='10',
+                                   zone='DE', year='2025',  participation='10',
                                    policy="ref")
-        os.chdir("/home/lisa/mnt/hourly_vs_annually/")
+        os.chdir("/home/lisa/Documents/hourly_vs_annually/")
 
 LHV_H2 = 33.33 # lower heating value [kWh/kg_H2]
 volume = 3200
-path_out = "/home/lisa/Documents/own_projects/green_h2/figures/new/graphs/"
+path_out = snakemake.output[0].split("20")[0]
 
 rename_techs = {"H2 Electrolysis": "electrolysis",
                 "H2 Store": "H2 store",
@@ -57,11 +58,11 @@ country = snakemake.wildcards.zone
 res_share = str(snakemake.config[f"res_target_{year}"][country])
 #%%
 # consequential emissions NL and DE ------------------
-supply_energy_NL = pd.read_csv("/home/lisa/mnt/hourly_vs_annually/results/two_steps_withhout_h2demand/csvs/2025/NL/p1/supply_energy_together.csv",
+supply_energy_NL = pd.read_csv("/home/lisa/Documents/hourly_vs_annually/results/DE_NL/csvs/2025/NL/p1/supply_energy_together.csv",
                             index_col=[0,1,2], header=[0,1,2,3])
 
 supply_energy_NL = pd.concat([supply_energy_NL], keys=["NL"], axis=1)
-supply_energy_DE = pd.read_csv("/home/lisa/mnt/hourly_vs_annually/results/two_steps_withhout_h2demand/csvs/2030/DE/p1/supply_energy_together.csv",
+supply_energy_DE = pd.read_csv("/home/lisa/Documents/hourly_vs_annually/results/DE_NL/csvs/2030/DE/p1/supply_energy_together.csv",
                             index_col=[0,1,2], header=[0,1,2,3])
 
 supply_energy_DE = pd.concat([supply_energy_DE], keys=["DE"], axis=1)
@@ -97,7 +98,7 @@ def plot_consequential_emissions_c(supply_energy, wished_policies,
     fig, ax = plt.subplots(nrows=1, ncols=2*len(wished_policies), sharey=True,figsize=(10,1.5))
 
     for i, policy in enumerate(nice_names*2):
-        ct = "NL" if i in [0,1] else "DE"
+        ct = "NL" if i in np.arange(len(nice_names)) else "DE"
         print(ct, i, policy)
         em_p = emissions_s[ct][policy]/ produced_H2
 
@@ -130,7 +131,7 @@ def plot_consequential_emissions_c(supply_energy, wished_policies,
                verticalalignment='center', transform=ax[0].transAxes, fontsize=14)
     plt.legend(fontsize=9, bbox_to_anchor=(1,1))
 
-    fig.savefig(path_out + f"{year}/{country}/consequential_emissions_by_carrier_{volume}_cleanness.pdf",
+    fig.savefig(path_out + f"consequential_emissions_by_carrier_{volume}_cleanness.pdf",
                 bbox_inches="tight")
 
 
@@ -510,7 +511,8 @@ plot_cost_breakdown_shares(h2_cost, wished_policies, wished_order, volume,
                             name="")
 
 #%% plot series
-path = "/home/lisa/mnt/hourly_vs_annually/results/two_steps_withhout_h2demand/networks/2025/DE/p1/"
+from _helpers import override_component_attrs
+path = "/home/lisa/mnt/hourly_vs_annually/results/test_bug_freeze_1H/networks/2025/DE/p1/"
 networks = ["monthly_p0_3200volume_flexibledemand",
             "monthly_p0_3200volume_nostore",
             "offgrid_p0_3200volume_flexibledemand",

@@ -72,6 +72,28 @@ if config["solving_option"] == "together":
         script: "scripts/solve_network_together.py"
 
 
+rule summarise_offtake_base:
+    input:
+        network=RDIR + "/base/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume.nc",
+    output:
+        csvs_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_emissions.csv",
+        csvs_cf=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_cf.csv",
+        csvs_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_supply_energy.csv",
+        csvs_nodal_supply_energy=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_nodal_supply_energy.csv",
+        csvs_nodal_capacities=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_nodal_capacities.csv",
+        csvs_weighted_prices=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_weighted_prices.csv",
+        csvs_curtailment=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_curtailment.csv",
+        csvs_costs=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_costs.csv",
+        csvs_nodal_costs=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_nodal_costs.csv",
+        csvs_h2_costs=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_h2_costs.csv",
+        csvs_emission_rate=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_emission_rate.csv",
+        csvs_h2_gen_mix=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_h2_gen_mix.csv",
+        csvs_attr_emissions=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_attr_emissions.csv",
+        csvs_price_duration=RDIR + "/csvs/{year}/{zone}/{palette}/base_{res_share}_{offtake_volume}volume_price_duration.csv",
+    threads: 2
+    resources: mem=2000
+    script: "scripts/summarise_offtake.py"
+
 rule summarise_offtake:
     input:
         network=RDIR + "/networks/{year}/{zone}/{palette}/{policy}_{res_share}_{offtake_volume}volume_{storage}.nc",

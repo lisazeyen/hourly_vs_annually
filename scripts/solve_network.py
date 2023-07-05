@@ -384,11 +384,12 @@ def add_unit_committment(n):
     [2] update with p.48 https://www.agora-energiewende.de/fileadmin/Projekte/2017/Flexibility_in_thermal_plants/115_flexibility-report-WEB.pdf
     
     [3] SI Schill et al. p.26 https://static-content.springer.com/esm/art%3A10.1038%2Fnenergy.2017.50/MediaObjects/41560_2017_BFnenergy201750_MOESM196_ESM.pdf
+    [4] MA https://zenodo.org/record/6421682
     """
     logger.info("add unit commitment")
     # OCGT
     links_i = n.links[n.links.carrier.isin(["OCGT"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.2  # [3] 
+    # n.links.loc[links_i, "p_min_pu"] = 0.2  # [3]   # removed since otherwise NL is not solving
     n.links.loc[links_i, "start_up_cost"] = 24 * 0.4 # [3] start-up depreciation costs Eur/MW
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 8-12% per min
     n.links.loc[links_i, "ramp_limit_start_up"] = 0.2  # [4] p.41
@@ -534,6 +535,8 @@ def solve_network(n, tech_palette):
     if len(n.generators[n.generators.p_nom_extendable])>5:
         import sys
         sys.exit("freezing of capacity did not work as intended")
+        
+    return n
 
 
     # to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
@@ -567,7 +570,7 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('solve_base_network',
-                                policy="ref", palette='p1', zone='DE', year='2025',
+                                policy="ref", palette='p1', zone='NL', year='2025',
                                 res_share="p0",
                                 offtake_volume="3200")
 
@@ -634,7 +637,7 @@ if __name__ == "__main__":
         #           p_set=pd.Series(load_elec, index=n.snapshots),
         #           carrier="electricity")
 
-        solve_network(n, tech_palette)
+        n = solve_network(n, tech_palette)
 
         n.export_to_netcdf(snakemake.output.network)
 

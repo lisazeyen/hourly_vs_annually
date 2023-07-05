@@ -16,7 +16,7 @@ if __name__ == "__main__":
         os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
-                                   zone='DE', year='2025',  participation='10',
+                                   zone='PL', year='2030',  participation='10',
                                    policy="ref")
         os.chdir("/home/lisa/Documents/hourly_vs_annually/")
 
@@ -449,14 +449,15 @@ def plot_cf(df, wished_policies, wished_order, volume, name=""):
 
 def plot_consequential_emissions(emissions, supply_energy, wished_policies,
                                  wished_order, volume, name=""):
-    compare_p = "ref" if snakemake.config["solving_option"]!="together" else "exl1p0"
+    compare_p = "offgrid" # "ref" if snakemake.config["solving_option"]!="together" else "offgrid"
     # consequential emissions
     emissions = emissions[~emissions.index.duplicated()]
-    emissions_v = emissions.loc[wished_policies+[compare_p]].xs((float(res_share), float(volume)), level=[1,2])
+    wished = wished_policies + [compare_p] if compare_p not in wished_policies else wished_policies[:]
+    emissions_v = emissions.loc[wished].xs((float(res_share), float(volume)), level=[1,2])
     emissions_v = emissions_v.reindex(wished_order, level=1)
     emissions_v.rename(index=rename_scenarios,
                        level=0,inplace=True)
-    emissions_s = (supply_energy.loc["co2"][wished_policies+[compare_p]]
+    emissions_s = (supply_energy.loc["co2"][wished]
                    .xs((res_share, str(volume)),level=[1,2], axis=1))
     emissions_s = emissions_s.loc[:, ~emissions_s.columns.duplicated()]
     emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
@@ -680,6 +681,34 @@ def plot_h2genmix(h2_gen_mix, wished_policies, wished_order, volume,
                 bbox_inches='tight')
 
 
+def plot_price_duration(weighted_prices_t, wished_policies, volume, name):
+    
+    
+    def plot_price(df, region):
+        price_t = df.groupby(level=[0,1], axis=1).mean()
+        price_t = price_t.reindex(["flexibledemand", "nostore"] ,level=1, axis=1)
+        price_duration = price_t.apply(lambda x: x.dropna().sort_values().reset_index(drop=True))
+        price_duration.rename(columns=rename_scenarios, level=0, inplace=True)
+        
+        fig, ax = plt.subplots()
+        price_duration.plot(ax=ax)
+        ax.set_ylabel("Eur/MWh")
+        ax.set_xlabel("hours")
+        ax.grid(alpha=0.3)
+        ax.set_axisbelow(True)
+        
+        fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"price_duration_{volume}{name}{region}.pdf",
+                    bbox_inches='tight')
+        
+    price_t = weighted_prices_t.xs((res_share, volume), level=[1,2], axis=1)[wished_policies]
+    price_t_rest = price_t.drop("CI", level=2, axis=1)
+    plot_price(price_t_rest, region="")
+    price_t_CI = price_t.xs("CI", level=2, axis=1)
+    plot_price(price_t_CI, region="CI")
+    
+    
+
+
 #%%
 final = pd.DataFrame()
 cf = pd.DataFrame()
@@ -687,6 +716,7 @@ emissions = pd.DataFrame()
 supply_energy = pd.DataFrame()
 nodal_capacities = pd.DataFrame()
 weighted_prices = pd.DataFrame()
+weighted_prices_t = pd.DataFrame()
 curtailment = pd.DataFrame()
 nodal_costs = pd.DataFrame()
 costs = pd.DataFrame()
@@ -698,13 +728,23 @@ attr_emissions = pd.DataFrame()
 price_duration = pd.DataFrame()
 
 for csv in snakemake.input:
-    emissions = pd.concat([emissions, pd.read_csv(csv,index_col=[0,1,2,3])])
+    try:
+        emissions = pd.concat([emissions, pd.read_csv(csv,index_col=[0,1,2,3])])
+    except:
+        print(f"{csv} not solved yet")
+        continue
     nodal_capacities = pd.concat([nodal_capacities,
                                   pd.read_csv(csv.replace("emissions", "nodal_capacities"),
                                    index_col=[0,1,2], header=[0,1,2,3])], axis=1)
     weighted_prices = pd.concat([weighted_prices,
                                  pd.read_csv(csv.replace("emissions", "weighted_prices"),
                                   index_col=[0], header=[0,1,2,3,4])], axis=1)
+    try:
+        weighted_prices_t = pd.concat([weighted_prices_t,
+                                     pd.read_csv(csv.replace("emissions", "weighted_prices_t"),
+                                      index_col=[0], header=[0,1,2,3,4])], axis=1)
+    except:
+        print("--- no marginal price t for ", csv)
     curtailment = pd.concat([curtailment, pd.read_csv(csv.replace("emissions", "curtailment"),
                               index_col=[0,1], header=[0,1,2,3])], axis=1)
 
@@ -790,6 +830,7 @@ wished_order = snakemake.config["scenario"]["storage"]
 year = snakemake.wildcards.year
 country = snakemake.wildcards.zone
 
+
 #%%
 for volume in a.index.get_level_values(2).unique():
     for name, wished_policies in plot_scenarios.items():
@@ -812,6 +853,9 @@ for volume in a.index.get_level_values(2).unique():
         # shadow prices
         plot_shadow_prices(weighted_prices, wished_policies, wished_order, volume,
                                 name=name, carrier="AC")
+        
+        # price duration curve
+        # plot_price_duration(weighted_prices_t, wished_policies, volume, name)
 
         # generation mix of H2
         plot_h2genmix(h2_gen_mix, wished_policies, wished_order, str(volume),
@@ -958,20 +1002,72 @@ for volume in res.columns.levels[2]:
                         name="store")
 
 #%%
-# plot_nodal_balances(nodal_supply_energy)
+
+def calculate_nodal_supply_energy(n, label, supply_energy):
+    """calculate the total energy supply/consuption of each component at the buses aggregated by carrier"""
+
+
+    bus_carriers = n.buses.carrier.unique()
+
+    for i in bus_carriers:
+        bus_map = (n.buses.carrier == i)
+        # correct CHPs with missing bus2
+        n.links.loc[n.links.carrier=="urban central solid biomass CHP", "bus2"] = ""
+        bus_map.at[""] = False
+
+        for c in n.iterate_components(n.one_port_components):
+
+            items = c.df.index[c.df.bus.map(bus_map).fillna(False)]
+
+            if len(items) == 0:
+                continue
+
+            s = c.pnl.p[items].multiply(n.snapshot_weightings.generators,axis=0).sum().multiply(c.df.loc[items, 'sign']).groupby([c.df.loc[items].index.str[:2], c.df.loc[items, "carrier"]]).sum()
+            s = pd.concat([s], keys=[c.list_name])
+            s = pd.concat([s], keys=[i])
+
+            supply_energy = supply_energy.reindex(s.index.union(supply_energy.index))
+            supply_energy.loc[s.index, label] = s
+
+
+        for c in n.iterate_components(n.branch_components):
+
+            for end in [col[3:] for col in c.df.columns if col[:3] == "bus"]:
+
+                items = c.df.index[c.df["bus" + str(end)].map(bus_map,
+                                                              na_action="ignore")]
+
+                if len(items) == 0:
+                    continue
+
+                s = (-1)*c.pnl["p"+end][items].multiply(n.snapshot_weightings.generators,axis=0).sum().groupby([c.df.loc[items, ("bus"+end)].str[:2], c.df.loc[items, "carrier"]]).sum()
+                s.rename(index=lambda x: x+end, level=1, inplace=True)
+                s = pd.concat([s], keys=[c.list_name])
+                s = pd.concat([s], keys=[i])
+
+                supply_energy = supply_energy.reindex(s.index.union(supply_energy.index))
+
+                supply_energy.loc[s.index, label] = s
+
+    return supply_energy
+
+# import pypsa
+# from _helpers import override_component_attrs
+# run = "DE_NL_avoid_suboptimal"
+# labels = pd.MultiIndex.from_product([[2025, 2030], ["DE", "NL", "ES", "CZ", "PL", "PT"]], names=["year", "ct"])
+# supply_energy = pd.DataFrame(columns=labels)
+
+# for label in labels:
+#     year = label[0]
+#     ct = label[1]
+#     print(year, ct)
+#     n = pypsa.Network(f"/home/lisa/mnt/hourly_vs_annually_copy/results/{run}/base/{year}/{ct}/p1/base_p0_3200volume.nc",
+#                       override_component_attrs=override_component_attrs())
+#     supply_energy = calculate_nodal_supply_energy(n, label, supply_energy)
+
+# supply_energy.to_csv(f"/home/lisa/Documents/hourly_vs_annually/results/{run}/csvs/nodal_supply_energy_together.csv")
 # #%%
-# base_year = snakemake.wildcards.year
-# base_ct = snakemake.wildcards.zone
-# tot_generation = {}
-# scenarios =  [("DE", "2025"),  ("DE", "2030"), ("NL", "2025")] #  [("DE", "2025"), ("DE", "2030"), ("NL", "2025")]
-# for scenario in scenarios:
-#     ct = scenario[0]
-#     year = scenario[1]
-#     res_share = str(snakemake.config[f"res_target_{year}"][ct])
-#     input_path = snakemake.output.csvs_nodal_supply_energy.replace(base_year, year).replace(f"/{base_ct}/", f"/{ct}/")
-#     tot_generation[scenario] = pd.read_csv(input_path, index_col=[0,1,2, 3], header=[0,1,2,3]).xs(ct, level=2).xs(res_share, level=1, axis=1)
-# #%%
-# tot_generation = pd.concat(tot_generation, axis=1)
+# tot_generation = supply_energy
 # co2_carriers = ["co2", "co2 stored", "process emissions"]
 
 # balances = {i.replace(" ","_"): [i] for i in tot_generation.index.levels[0]}
@@ -982,19 +1078,24 @@ for volume in res.columns.levels[2]:
 # v = ["AC"]
 
 # df = tot_generation.loc[v]
-# df = df.groupby(df.index.get_level_values(2)).sum()
+# df = df.droplevel(level=[0,1])
 
 # #convert MWh to TWh
 # df = df / 1e6
 
+# final = {}
+# for col in df.columns:
+#     final[col] = df.loc[col[1], col]
+# final = pd.concat(final, axis=1)
+# df = final
 # #remove trailing link ports
 # df.index = [i[:-1] if ((i not in ["co2", "NH3", "H2"]) and (i[-1:] in ["0","1","2","3"])) else i for i in df.index]
 
 # # df = df.groupby(df.index.map(rename_techs)).sum()
-# df = df.groupby(df.index).sum()
+# # df = df.groupby(df.index).sum()
 
 
-# df = df.xs(("ref", volume, "flexibledemand"), level=[2,3,4], axis=1)
+# # df = df.xs(("ref", volume, "flexibledemand"), level=[2,3,4], axis=1)
 
 # to_drop = df.index[df.abs().max(axis=1) < 1] # snakemake.config['plotting']['energy_threshold']/10]
 
@@ -1007,7 +1108,7 @@ for volume in res.columns.levels[2]:
 
 # df.drop(["AC", "DC"], errors="ignore",inplace=True)
 # df.rename(index=rename_techs,inplace=True)
-# df = df.groupby(df.index).sum()
+# # df = df.groupby(df.index).sum()
 # # df.columns = [f"{snakemake.wildcards.zone}-{snakemake.wildcards.year}"]
 
 # a = df[df>0].dropna(axis=0, how="all")
@@ -1029,20 +1130,8 @@ for volume in res.columns.levels[2]:
 # ax.set_axisbelow(True)
 # plt.ylabel("share of generation \n [%]")
 # plt.legend(bbox_to_anchor=(1,1))
-# fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"energy-{k}-noimports.pdf",
+# fig.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/{run}/graphs/energy-{k}-noimports.pdf",
 #             bbox_inches='tight')
 
 
-# n = pypsa.Network("/home/lisa/mnt/247-cfe/results/remove_one_snapshot/networks/10/2025/DE/p1/res1p0_p0_3200volume_htank.nc",
-#                   override_component_attrs=override_component_attrs())
-# m = pypsa.Network("/home/lisa/mnt/247-cfe/results/remove_one_snapshot/networks/10/2025/DE/p1/res1p0_p0_3200volume_mtank.nc",
-#                   override_component_attrs=override_component_attrs())
-# htank = n.generators_t.p.loc[:,n.generators.bus==f"{name}"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
-# htank = pd.concat([htank], keys=["htank"], axis=1)
-# mtank = m.generators_t.p.loc[:,n.generators.bus==f"{name}"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
-# mtank = pd.concat([mtank], keys=["mtank"], axis=1)
-# together = pd.concat([mtank, htank], axis=1)
-# fig, ax = plt.subplots()
-# together.groupby(together.index.month).sum().plot(ax=ax)
-# together.groupby(together.index.month).sum().groupby(level=0, axis=1).sum().plot(ax=ax)
-# plt.legend(bbox_to_anchor=(1,1))
+

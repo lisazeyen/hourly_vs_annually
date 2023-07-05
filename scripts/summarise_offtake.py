@@ -15,13 +15,13 @@ if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
+        os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
-        snakemake = mock_snakemake('summarise_offtake', palette='p1',
+        snakemake = mock_snakemake('summarise_offtake_base', palette='p1',
                                    zone='DE', year='2025',
                                    policy="offgrid", storage="nostore",
                                    offtake_volume=3200, res_share="p0")
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/")
+        os.chdir("/home/lisa/mnt/hourly_vs_annually/")
 
 LHV_H2 = 33.33 # lower heating value [kWh/kg_H2]
 
@@ -276,7 +276,7 @@ color_dict = {"ref": '#377eb8',
     }
 
 
-def calculate_weighted_prices(n, label, weighted_prices):
+def calculate_weighted_prices(n, label, weighted_prices, drop_sn=2):
     # Warning: doesn't include storage units as loads
 
     weighted_prices = weighted_prices.reindex(pd.Index([
@@ -315,11 +315,36 @@ def calculate_weighted_prices(n, label, weighted_prices):
             a = load/load.max() * n.buses_t.marginal_price.reindex(columns=load.columns)
         else:
             a = n.buses_t.marginal_price.loc[:,n.buses.carrier==carrier]
+        
+        
+        # Get outliers
+        to_drop = a.sum(axis=1).sort_values().iloc[-drop_sn:].index
+        a.drop(to_drop, inplace=True)
+        
+        
+        # fig, ax= plt.subplots()
+        # a.loc[:,~a.columns.str.contains(f"{name}")].mean(axis=1).sort_values().reset_index(drop=True).plot(ax=ax)
+        # ax.set_ylabel("Eur/MWh")
+        # ax.set_xlabel("hours")
+        # ax.grid(alpha=0.3)
+        # ax.set_axisbelow(True)
+        # ax.set_xlim([0, 8999])
+        # ax.set_ylim([0,  a.loc[:,~a.columns.str.contains(f"{name}")].mean(axis=1).max()*1.1])
+    
         load_rest = a.loc[:,~a.columns.str.contains(f"{name}")].mean(axis=1).mean()
         load_google = a.loc[:,a.columns.str.contains(f"{name}")].mean(axis=1).mean()
 
         weighted_prices.loc[carrier,(label[0][0], label[0][1], label[0][2], label[0][3], "rest")] = load_rest
         weighted_prices.loc[carrier,(label[0][0], label[0][1], label[0][2], label[0][3],f"{name}")]= load_google
+        
+        if carrier=="AC":
+            # Combine the current index levels and the new level into a list
+            levels = [label.get_level_values(i) for i in range(label.nlevels)] + [a.columns]
+            # Create a new MultiIndex from the product of the levels
+            new_index = pd.MultiIndex.from_product(levels, names=label.names + ['bus'])
+            a.columns = new_index
+            
+            a.to_csv(snakemake.output["csvs_weighted_prices"].replace(".csv", "_t.csv"))
 
     return weighted_prices
 
@@ -434,7 +459,7 @@ def calculate_price_duration(n,label, price_duration):
     return price_duration
 
 def calculate_hydrogen_cost(n, label, h2_cost):
-    if policy in ["ref"]: return h2_cost
+    if policy in ["ref", ""]: return h2_cost
     # revenue from selling and costs for buying
     marginal_price = n.buses_t.marginal_price
     # import
@@ -609,12 +634,12 @@ assign_locations(n, name)
 weightings = n.snapshot_weightings.generators
 
 # wildcards
-policy = snakemake.wildcards.policy
+policy = snakemake.wildcards.policy if snakemake.rule== 'summarise_offtake' else ""
 country = snakemake.wildcards.zone
 year = snakemake.wildcards.year
 ct_target = snakemake.config[f"res_target_{year}"][country]
 res_share = snakemake.wildcards.res_share
-storage_type = snakemake.wildcards.storage
+storage_type = snakemake.wildcards.storage if snakemake.rule== 'summarise_offtake' else ""
 volume = snakemake.wildcards.offtake_volume
 palette = snakemake.wildcards.palette
 
@@ -677,7 +702,7 @@ h2_cost = calculate_hydrogen_cost(n, cols, h2_cost)
 if "import" in n.links.carrier.unique():
     emission_rate, attr_emissions = calculate_emission_rate(n, cols, emission_rate, attr_emissions)
 
-if policy!="ref":
+if policy not in ["ref", ""]:
     h2_gen_mix = calculate_h2_generationmix(n, cols, h2_gen_mix)
 # calculate price duration in local zone
 price_duration = calculate_price_duration(n,cols, price_duration)

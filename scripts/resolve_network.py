@@ -165,7 +165,7 @@ def add_H2(n, snakemake):
 def add_dummies(n):
     elec_buses = n.buses.index[n.buses.carrier == "AC"]
 
-    logger.info("adding dummies to",elec_buses)
+    logger.info(f"adding dummies to {elec_buses}")
     n.madd("Generator",
             elec_buses + " dummy",
             bus=elec_buses,
@@ -282,13 +282,15 @@ def solve(policy, n):
 
     if result != "ok" or message != "optimal":
         logger.info(f"solver ended with {result} and {message}, so re-running")
-        solver_options["crossover"] = 1
+        # solver_options["crossover"] = 1
+        solver_options["NumericFocus"] = 3
+        solver_options["OptimalityTol"] = 1e-5
         result, message = n.optimize(
-               extra_functionality=extra_functionality,
-               solver_name=solver_name,
-               solver_options=solver_options,
-               log_fn=snakemake.log.solver,
-               linearized_unit_commitment=linearized_uc)
+                extra_functionality=extra_functionality,
+                solver_name=solver_name,
+                solver_options=solver_options,
+                log_fn=snakemake.log.solver,
+                linearized_unit_commitment=linearized_uc)
 
 
 
@@ -302,11 +304,11 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="grd", palette='p1', zone='DE',
+                                policy="exl1p0", palette='p1', zone='DE',
                                 year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
-                                storage="nostore")
+                                storage="flexibledemand")
 
     logging.basicConfig(filename=snakemake.log.python,
                     level=snakemake.config['logging_level'])
@@ -333,11 +335,12 @@ if __name__ == "__main__":
     node = geoscope(n, zone, area)['node']
     logger.info(f"solving with node: {node}")
 
-    freeze_capacities(n)
+    # freeze_capacities(n)
     
     if len(n.generators[n.generators.p_nom_extendable])>5:
         import sys
-        sys.exit("freezing of capacity did not work as intended")
+        logger.info("Warning something wrong with freezing capacities")
+        sys.exit()
 
     add_H2(n, snakemake)
 

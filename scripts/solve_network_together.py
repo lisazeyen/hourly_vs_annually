@@ -70,13 +70,27 @@ def solve_network(n, tech_palette):
     nhours = snakemake.config["scenario"]["temporal_resolution"]
     n = average_every_nhours(n, nhours)
 
-    n.optimize(
+    result, message = n.optimize(
            extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           log_fn=snakemake.log.solver,
-           linearized_unit_commitment=linearized_uc)
+           linearized_unit_commitment=linearized_uc,
+           log_fn=snakemake.log.solver)
+           
+    if result != "ok" or message != "optimal":
+        logger.info(f"solver ended with {result} and {message}, so re-running")
+        # solver_options["crossover"] = 1
+        solver_options["NumericFocus"] = 3
+        solver_options["OptimalityTol"] = 1e-5
+        n.optimize(
+                extra_functionality=extra_functionality,
+                solver_name=solver_name,
+                solver_options=solver_options,
+                log_fn=snakemake.log.solver,
+                linearized_unit_commitment=linearized_uc)
+    
+    return n
 
     # n.lopf(pyomo=False,
     #        extra_functionality=extra_functionality,
@@ -158,7 +172,7 @@ if __name__ == "__main__":
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
-        solve_network(n, tech_palette)
+        n = solve_network(n, tech_palette)
 
         n.export_to_netcdf(snakemake.output.network)
 
