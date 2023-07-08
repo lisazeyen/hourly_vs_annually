@@ -312,7 +312,7 @@ def calculate_weighted_prices(n, label, weighted_prices, drop_sn=2):
 
         load = load.groupby(load.columns,axis=1).sum()
         if carrier == "AC":
-            a = load/load.max() * n.buses_t.marginal_price.reindex(columns=load.columns)
+            a = n.buses_t.marginal_price.reindex(columns=load.columns) # load/load.max() * n.buses_t.marginal_price.reindex(columns=load.columns)
         else:
             a = n.buses_t.marginal_price.loc[:,n.buses.carrier==carrier]
         
