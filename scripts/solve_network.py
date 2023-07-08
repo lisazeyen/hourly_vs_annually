@@ -371,6 +371,49 @@ def country_res_constraints(n, snakemake):
         logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
 
         n.model.add_constraints(lhs == target*total_load, name=f"GlobalConstraint-country_res_constraints_{ct}")
+        
+
+def biomass_generation_constraint(n, snakemake):
+    
+    year = snakemake.wildcards.year
+    country_targets = snakemake.config[f"res_target_{year}"]
+
+    weights = n.snapshot_weightings["generators"]
+    biomass = ["urban central solid biomass CHP"]
+    
+    links_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
+    
+    if links_i.empty: return
+    
+    biomass_gen = n.model['Link-p'].loc[:,links_i] * weights
+    
+    rhs = n.links.loc[links_i, "p_nom"]*0.67*weights.sum()
+    
+    lhs = biomass_gen.sum(dims="snapshot")
+    
+    
+    n.model.add_constraints(lhs == rhs, name="GlobalConstraint-biomass_generation")
+
+
+    # for ct in country_targets.keys():
+        
+    #     grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
+
+    #     if grid_buses.empty: continue
+
+        
+    #     # breakpoint()
+    #     country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
+    #                                       & n.links.carrier.isin(biomass)]
+    #     if country_res_links.empty: continue
+    #     links = n.model['Link-p'].loc[:,country_res_links] * weights
+    #     # generation assuming average capacity factors of 0.67
+    #     rhs = n.links.loc[country_res_links, "p_nom"]*0.67*weights.sum()
+        
+    #     lhs = links.sum(dims="snapshot")
+        
+        
+    #     n.model.add_constraints(lhs == rhs, name=f"GlobalConstraint-country_biomass_{ct}")
 
 
 def add_unit_committment(n):
@@ -491,6 +534,7 @@ def solve_network(n, tech_palette):
 
         add_battery_constraints(n)
         country_res_constraints(n, snakemake)
+        biomass_generation_constraint(n, snakemake)
     
     def extra_functionality_after(n, snapshots):
 
@@ -536,18 +580,26 @@ def solve_network(n, tech_palette):
         import sys
         sys.exit("freezing of capacity did not work as intended")
         
-    return n
-
+    
 
     # to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
-    #            .sort_values().iloc[-4:].index)
+    #             .sort_values().iloc[-4:].index)
+    
+    to_drop = pd.Index(['2013-01-15 10:00:00', '2013-11-28 16:00:00',
+                        '2013-01-17 17:00:00'])
+    
+    to_drop = to_drop.intersection(n.snapshots)
 
-    # # drop snapshots because of load shedding
-    # for sn in to_drop:
-    #     new_snapshots = n.snapshots.drop(sn)
-    #     n.set_snapshots(new_snapshots)
-    #     final_sn = n.snapshots[n.snapshots<sn][-1]
-    #     n.snapshot_weightings.loc[final_sn] *= 2
+    # drop snapshots because of load shedding
+    for sn in to_drop:
+        new_snapshots = n.snapshots.drop(sn)
+        n.set_snapshots(new_snapshots)
+        final_sn = n.snapshots[n.snapshots<sn][-1]
+        n.snapshot_weightings.loc[final_sn] *= 2
+        
+    
+    return n
+
     
 
     

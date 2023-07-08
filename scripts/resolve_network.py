@@ -14,7 +14,8 @@ from vresutils.benchmark import memory_logger
 
 from _helpers import override_component_attrs
 
-from solve_network import geoscope, freeze_capacities, add_battery_constraints
+from solve_network import (geoscope, freeze_capacities, add_battery_constraints,
+                           biomass_generation_constraint)
 
 
 
@@ -255,6 +256,7 @@ def solve(policy, n):
     def extra_functionality(n, snapshots):
 
         add_battery_constraints(n)
+        biomass_generation_constraint(n, snakemake)
 
         if "res" in policy:
             logger.info("setting annual RES target")
