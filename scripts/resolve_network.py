@@ -90,7 +90,9 @@ def add_H2(n, snakemake):
         carrier="H2 Store",
         capital_cost = store_cost,
 		)
-
+    
+    eff_electrolysis = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
+    max_elec = float(offtake_volume) / eff_electrolysis
     if any([x in policy for x in ["res", "cfe", "exl", "monthly"]]):
         n.add("Link",
               name + " export",
@@ -98,7 +100,7 @@ def add_H2(n, snakemake):
               bus1=node,
               carrier="export",
               marginal_cost=0.1, #large enough to avoid optimization artifacts, small enough not to influence PPA portfolio
-              p_nom=1e6)
+              p_nom=max_elec)
 
     if any([x in policy for x in ["res", "grd", "monthly"]]):
         n.add("Link",
@@ -244,7 +246,7 @@ def excess_constraints(n, snakemake):
     # there is no import so I think we don't need this constraint
     # con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
 
-    allowed_excess = float(policy.replace("exl","").replace("p","."))
+    allowed_excess = float(policy.replace("exl","").replace("p","."))-1
 
 
     lhs = export - electrolysis*allowed_excess
