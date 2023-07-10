@@ -176,7 +176,7 @@ def add_dummies(n):
 
 
 def res_constraints(n, snakemake):
-    print("set res constraint")
+    print("set annual matching constraint")
 
     ci = snakemake.config['ci']
     name = snakemake.config['ci']['name']
@@ -231,13 +231,14 @@ def excess_constraints(n, snakemake):
     name = ci['name']
     policy = snakemake.wildcards.policy
 
-    res_gens = [name + " " + g for g in ci['res_techs']]
     weights = n.snapshot_weightings["generators"]
+    
+    export_i = n.links[n.links.carrier=="export"].index
+    
+    export = (n.model["Link-p"].loc[:, export_i] * weights).sum()
+    # breakpoint()
 
-
-    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum("Generator")
-
-    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights)
+    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights).sum()
 
 
     # there is no import so I think we don't need this constraint
@@ -246,7 +247,7 @@ def excess_constraints(n, snakemake):
     allowed_excess = float(policy.replace("exl","").replace("p","."))
 
 
-    lhs = res - electrolysis*allowed_excess
+    lhs = export - electrolysis*allowed_excess
 
     n.model.add_constraints(lhs <= 0, name="RES_hourly_excess")
 
@@ -306,7 +307,7 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="exl1p0", palette='p1', zone='DE',
+                                policy="exl1p2", palette='p1', zone='DE',
                                 year='2025',
                                 res_share="p0",
                                 offtake_volume="3200",
