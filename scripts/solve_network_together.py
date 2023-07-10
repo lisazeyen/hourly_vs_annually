@@ -5,7 +5,8 @@ from solve_network import (prepare_costs, palette, strip_network,
                            limit_resexp,set_co2_policy,
                            phase_outs, reduce_biomass_potential,
                            cost_parametrization, country_res_constraints,
-                           average_every_nhours, add_unit_committment)
+                           average_every_nhours, add_unit_committment,
+                           prepare_network)
 from resolve_network import (add_H2, add_dummies, res_constraints,
                              monthly_constraints, excess_constraints)
 
@@ -69,6 +70,8 @@ def solve_network(n, tech_palette):
     # testing
     nhours = snakemake.config["scenario"]["temporal_resolution"]
     n = average_every_nhours(n, nhours)
+    
+    n = prepare_network(n)
 
     result, message = n.optimize(
            extra_functionality=extra_functionality,

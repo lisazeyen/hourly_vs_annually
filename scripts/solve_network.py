@@ -442,7 +442,7 @@ def add_unit_committment(n):
     # CCGT
     links_i = n.links[n.links.carrier.isin(["CCGT"])].index
     n.links.loc[links_i, "p_min_pu"] = 0.45  # [2] mean of Minimum load Most commonly used power plants
-    n.links.loc[links_i, "start_up_cost"] = 60 * 0.57 # [3] start-up depreciation costs Eur/MW, in [4] 144
+    n.links.loc[links_i, "start_up_cost"] = 144 * 0.57 # [3] start-up depreciation costs Eur/MW, in [4] 144
     n.links.loc[links_i, "min_up_time"] = 3  # mean of "Cold start-up time" [2] Most commonly used power plants
     n.links.loc[links_i, "min_down_time"] = 2   # [3] Minimum offtime [hours]
     n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 2-4% per min
@@ -525,7 +525,23 @@ def average_every_nhours(n, offset):
         n.snapshot_weightings = weights
 
         return n
+
+def prepare_network(n):
+    for df in (
+            n.generators_t.p_max_pu,
+            n.generators_t.p_min_pu,  
+            n.storage_units_t.inflow,
+        ):
+            df.where(df > 1e-2, other=0.0, inplace=True)
     
+    for t in n.iterate_components():
+           if "marginal_cost" in t.df:
+               t.df["marginal_cost"] += 1e-2 + 2e-3 * (
+                   np.random.random(len(t.df)) - 0.5
+               )
+    return n
+
+
 def solve_network(n, tech_palette):
 
     clean_techs, storage_techs, storage_chargers, storage_dischargers = palette(tech_palette)
@@ -564,6 +580,8 @@ def solve_network(n, tech_palette):
     nhours = snakemake.config["scenario"]["temporal_resolution"]
     n = average_every_nhours(n, nhours)
     
+    n = prepare_network(n)
+    
     n.export_to_netcdf(snakemake.output.prenetwork)
 
     n.optimize(
@@ -582,13 +600,13 @@ def solve_network(n, tech_palette):
         
     
 
-    # to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
-    #             .sort_values().iloc[-4:].index)
+    to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
+                .sort_values().iloc[-4:].index)
     
-    to_drop = pd.Index(['2013-01-15 10:00:00', '2013-11-28 16:00:00',
-                        '2013-01-17 17:00:00'])
+    # to_drop = pd.Index(['2013-01-15 10:00:00', '2013-11-28 16:00:00',
+    #                     '2013-01-17 17:00:00'])
     
-    to_drop = to_drop.intersection(n.snapshots)
+    # to_drop = to_drop.intersection(n.snapshots)
 
     # drop snapshots because of load shedding
     for sn in to_drop:
