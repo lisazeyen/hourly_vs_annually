@@ -6,7 +6,8 @@ from solve_network import (prepare_costs, palette, strip_network,
                            phase_outs, reduce_biomass_potential,
                            cost_parametrization, country_res_constraints,
                            average_every_nhours, add_unit_committment,
-                           prepare_network)
+                           prepare_network, capacity_target_constraint,
+                           DE_targets)
 from resolve_network import (add_H2, add_dummies, res_constraints,
                              monthly_constraints, excess_constraints)
 
@@ -35,12 +36,15 @@ def solve_network(n, tech_palette):
         if "res" in policy:
             logger.info("setting annual RES target")
             res_constraints(n, snakemake)
-        if "monthly" in policy:
+        elif "monthly" in policy:
             logger.info("setting monthly RES target")
             monthly_constraints(n, snakemake)
         elif "exl" in policy:
             logger.info("setting excess limit on hourly matching")
             excess_constraints(n, snakemake)
+        
+        if snakemake.config["scenario"]["DE_target"]:
+            capacity_target_constraint(n, snakemake)
 
 
     if snakemake.config["global"]["must_run"]:
@@ -48,22 +52,38 @@ def solve_network(n, tech_palette):
         n.links.loc[coal_i, "p_min_pu"] = 0.9
     n.consistency_check()
 
-    # drop snapshots because of load shedding
-    # to_drop = pd.Timestamp('2013-01-16 15:00:00')
-    # new_snapshots = n.snapshots.drop(to_drop)
-    # n.set_snapshots(new_snapshots)
-    # final_sn = n.snapshots[n.snapshots<to_drop][-1]
-    # n.snapshot_weightings.loc[final_sn] *= 2
+    # to_drop = pd.Index(['2013-01-16 18:00:00', '2013-01-15 18:00:00',
+    #                '2013-02-13 17:00:00', '2013-01-23 17:00:00',
+    #                '2013-01-23 16:00:00', '2013-01-25 06:00:00',
+    #                '2013-01-25 07:00:00', '2013-01-24 18:00:00',
+    #                '2013-01-24 16:00:00', '2013-01-15 16:00:00'])
+    
+    # to_drop = to_drop.intersection(n.snapshots)
+
+    # # drop snapshots because of load shedding
+    # for sn in to_drop:
+    #     new_snapshots = n.snapshots.drop(sn)
+    #     n.set_snapshots(new_snapshots)
+    #     final_sn = n.snapshots[n.snapshots<sn][-1]
+    #     n.snapshot_weightings.loc[final_sn] *= 2
 
     formulation = snakemake.config['solving']['options']['formulation']
     solver_options = snakemake.config['solving']['solver']
     solver_name = solver_options['name']
     solver_options["crossover"] = 0
     
-    if snakemake.config["global"]["uc"]:
-         add_unit_committment(n)
+    
+    if snakemake.config["scenario"]["DE_target"]:
+        n = DE_targets(n, snakemake)
          
-    linearized_uc = True if any(n.links.committable) else False
+    if snakemake.config["global"]["uc"]:
+        logger.info("Adding unit commitment.")
+        add_unit_committment(n)
+
+    linearized_uc = snakemake.config["global"]["linear_uc"]
+    
+    if linearized_uc:
+        logger.info("Adding linearised unit commitment.")
 
 
     
