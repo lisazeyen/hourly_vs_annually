@@ -75,7 +75,7 @@ def calculate_supply_energy(n, label, supply_energy):
 
             for end in [col[3:] for col in c.df.columns if col[:3] == "bus"]:
 
-                items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action=False)]
+                items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action="ignore")]
 
                 if len(items) == 0:
                     continue
@@ -125,7 +125,7 @@ def calculate_nodal_supply_energy(n, label, supply_energy):
 
             for end in [col[3:] for col in c.df.columns if col[:3] == "bus"]:
 
-                items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action=False)]
+                items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action="ignore")]
 
                 if len(items) == 0:
                     continue
@@ -181,7 +181,7 @@ def calculate_h2_generationmix(n, label, gen_mix):
 
         for end in [col[3:] for col in c.df.columns if col[:3] == "bus"]:
 
-            items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action=False)]
+            items = c.df.index[c.df["bus" + str(end)].map(bus_map, na_action="ignore")]
 
             if len(items) == 0:
                 continue
@@ -248,8 +248,9 @@ opt_name = {
 
 
 def assign_locations(n):
+    ci_name = snakemake.config['ci']["name"]
     for c in n.iterate_components(n.one_port_components|n.branch_components):
-        c.df["location"] = c.df.rename(index=lambda x: "H2procuder" if "H2procuder" in x else "rest").index
+        c.df["location"] = c.df.rename(index=lambda x: f"{ci_name}" if f"{ci_name}" in x else "rest").index
 
 
 def calculate_nodal_capacities(n, label, nodal_capacities):
@@ -280,12 +281,12 @@ color_dict = {"ref": '#377eb8',
 
 def calculate_weighted_prices(n, label, weighted_prices):
     # Warning: doesn't include storage units as loads
-
+    ci_name = snakemake.config['ci']["name"]
     weighted_prices = weighted_prices.reindex(pd.Index([
         "AC",
         "H2"
     ]))
-    cols = pd.MultiIndex.from_product([label.levels[0], label.levels[1], label.levels[2], label.levels[3], ["H2procuder", "rest"]])
+    cols = pd.MultiIndex.from_product([label.levels[0], label.levels[1], label.levels[2], label.levels[3], [f"{ci_name}", "rest"]])
 
     weighted_prices = weighted_prices.reindex(columns = weighted_prices.columns.union(cols))
     link_loads = {"AC":  ["battery charger", "H2 Electrolysis"],
@@ -317,11 +318,11 @@ def calculate_weighted_prices(n, label, weighted_prices):
             a = load/load.max() * n.buses_t.marginal_price.reindex(columns=load.columns)
         else:
             a = n.buses_t.marginal_price.loc[:,n.buses.carrier==carrier]
-        load_rest = a.loc[:,~a.columns.str.contains("H2procuder")].mean(axis=1).mean()
-        load_H2procuder = a.loc[:,a.columns.str.contains("H2procuder")].mean(axis=1).mean()
+        load_rest = a.loc[:,~a.columns.str.contains(f"{ci_name}")].mean(axis=1).mean()
+        load_H2procuder = a.loc[:,a.columns.str.contains(f"{ci_name}")].mean(axis=1).mean()
 
         weighted_prices.loc[carrier,(label[0][0], label[0][1], label[0][2], label[0][3], "rest")] = load_rest
-        weighted_prices.loc[carrier,(label[0][0], label[0][1], label[0][2], label[0][3],"H2procuder")]= load_H2procuder
+        weighted_prices.loc[carrier,(label[0][0], label[0][1], label[0][2], label[0][3],f"{ci_name}")]= load_H2procuder
 
     return weighted_prices
 
@@ -436,6 +437,8 @@ def calculate_price_duration(n,label, price_duration):
     return price_duration
 
 def calculate_hydrogen_cost(n, label, h2_cost):
+    
+    
     if policy in ["ref"]: return h2_cost
     # revenue from selling and costs for buying
     marginal_price = n.buses_t.marginal_price
@@ -448,6 +451,8 @@ def calculate_hydrogen_cost(n, label, h2_cost):
     zone = snakemake.wildcards.zone
     area = snakemake.config['area']
     node = geoscope(zone, area)['node']
+    ci_name = snakemake.config['ci']["name"]
+    
     weight = n.snapshot_weightings.generators
     price = n.buses_t.marginal_price.loc[:, node].mul(weight)
     # import costs
@@ -455,10 +460,10 @@ def calculate_hydrogen_cost(n, label, h2_cost):
     # export revenue
     export_cost = (-1)* p_export.mul(price.values, axis=0).sum()
     # offtake H2
-    offtake = n.loads_t.p.loc[:,"H2procuder H2"].mul(weight, axis=0).sum()
+    offtake = n.loads_t.p.loc[:,f"{ci_name} H2"].mul(weight, axis=0).sum()
     # costs from the others
     try:
-        costs = nodal_costs.loc[nodal_costs.index.get_level_values(2)=="H2procuder",:][label].groupby(level=[0,3]).sum()
+        costs = nodal_costs.loc[nodal_costs.index.get_level_values(2)==f"{ci_name}",:][label].groupby(level=[0,3]).sum()
     except KeyError:
         print(label)
         return h2_cost
@@ -479,6 +484,7 @@ def calculate_hydrogen_cost(n, label, h2_cost):
     return h2_cost
 
 def calculate_emission_rate(n, label, emission_rate, attr_emissions):
+    ci_name = snakemake.config['ci']["name"]
     zone = snakemake.wildcards.zone
     area = snakemake.config['area']
     name = snakemake.config['ci']['name']
@@ -560,16 +566,16 @@ def calculate_emission_rate(n, label, emission_rate, attr_emissions):
                                         .div(clean_country_resources
                                              + dirty_country_resources, axis=0))
 
-    ci_emissions_t = n.links_t.p0["H2procuder import"]*grid_supply_emission_rate
-    ci_emissions_t_ni = n.links_t.p0["H2procuder import"]*grid_supply_emission_rate_withoutimports
-    ci_emissions_t_by_carrier = grid_supply_emission_rate_by_car.mul(n.links_t.p0["H2procuder import"], axis=0)
-    ci_emissions_t_by_carrier_ni = grid_supply_emission_rate_by_car_withoutimports.mul(n.links_t.p0["H2procuder import"], axis=0)
+    ci_emissions_t = n.links_t.p0[f"{ci_name} import"]*grid_supply_emission_rate
+    ci_emissions_t_ni = n.links_t.p0[f"{ci_name} import"]*grid_supply_emission_rate_withoutimports
+    ci_emissions_t_by_carrier = grid_supply_emission_rate_by_car.mul(n.links_t.p0[f"{ci_name} import"], axis=0)
+    ci_emissions_t_by_carrier_ni = grid_supply_emission_rate_by_car_withoutimports.mul(n.links_t.p0[f"{ci_name} import"], axis=0)
 
-    carbon_intensity_h2 = ci_emissions_t.sum()/abs(n.loads_t.p.loc[:,"H2procuder H2"].sum()) * LHV_H2
-    carbon_intesity_h2_by_car = ci_emissions_t_by_carrier.sum().div(n.loads_t.p.loc[:,"H2procuder H2"].sum())* LHV_H2
+    carbon_intensity_h2 = ci_emissions_t.sum()/abs(n.loads_t.p.loc[:,f"{ci_name} H2"].sum()) * LHV_H2
+    carbon_intesity_h2_by_car = ci_emissions_t_by_carrier.sum().div(n.loads_t.p.loc[:,f"{ci_name} H2"].sum())* LHV_H2
     carbon_intesity_h2_by_car = pd.concat([carbon_intesity_h2_by_car], keys=["with imports"])
-    carbon_intensity_h2_ni = ci_emissions_t_ni.sum()/abs(n.loads_t.p.loc[:,"H2procuder H2"].sum()) * LHV_H2
-    carbon_intesity_h2_by_car_ni = ci_emissions_t_by_carrier_ni.sum().div(n.loads_t.p.loc[:,"H2procuder H2"].sum())* LHV_H2
+    carbon_intensity_h2_ni = ci_emissions_t_ni.sum()/abs(n.loads_t.p.loc[:,f"{ci_name} H2"].sum()) * LHV_H2
+    carbon_intesity_h2_by_car_ni = ci_emissions_t_by_carrier_ni.sum().div(n.loads_t.p.loc[:,f"{ci_name} H2"].sum())* LHV_H2
     carbon_intesity_h2_by_car_ni = pd.concat([carbon_intesity_h2_by_car_ni], keys=["no imports"])
 
     emission_rate = emission_rate.reindex(columns = emission_rate.columns.union(label))
@@ -589,11 +595,12 @@ def calculate_emission_rate(n, label, emission_rate, attr_emissions):
 def plot_series(network,label, carrier="AC"):
 
     n = network.copy()
+    ci_name = snakemake.config['ci']["name"]
     # assign_location(n)
     # assign_carriers(n)
 
     buses = n.buses.index[n.buses.carrier.str.contains(carrier)]
-    buses = ["H2procuder"]
+    buses = [f"{ci_name}"]
 
     supply = pd.DataFrame(index=n.snapshots)
     for c in n.iterate_components(n.branch_components):
@@ -1497,7 +1504,7 @@ for network_path in snakemake.input:
     p_nom_opt = n.links.p_nom_opt
     df = (n.links_t.p0/n.links.p_nom_opt)
     df_s = (n.stores_t.e/n.stores.e_nom_opt)
-    df.drop(df.columns[(p_nom_opt<10)], axis=1, inplace=True)
+    df.drop(p_nom_opt[p_nom_opt<10].index, axis=1, inplace=True)
     df.dropna(axis=1, inplace=True)
     cols = pd.MultiIndex.from_product([[policy], [price], [volume],
                                        [storage_type], df.columns],
@@ -1547,8 +1554,9 @@ for network_path in snakemake.input:
     # calculate price duration in local zone
     price_duration = calculate_price_duration(n,cols, price_duration)
 
-cf = cf.loc[:,((cf.columns.get_level_values(4).str.contains("H2procuder H2 Electrolysis"))|
-            (cf.columns.get_level_values(4).str.contains("H2procuder H2 Store")))]
+ci_name = snakemake.config['ci']["name"]
+cf = cf.loc[:,((cf.columns.get_level_values(4).str.contains(f"{ci_name} H2 Electrolysis"))|
+            (cf.columns.get_level_values(4).str.contains(f"{ci_name} H2 Store")))]
 #%%
 emissions.to_csv(snakemake.output.csvs_emissions)
 cf.to_csv(snakemake.output.csvs_cf)
@@ -1581,7 +1589,7 @@ h2_gen_mix = pd.read_csv(snakemake.output.csvs_h2_gen_mix, index_col=[0,1], head
 attr_emissions = pd.read_csv(snakemake.output.csvs_attr_emissions, index_col=[0,1], header=[0,1,2,3])
 
 
-a = cf.mean().xs("google H2 Electrolysis", level=4)
+a = cf.mean().xs(f"{ci_name} H2 Electrolysis", level=4)
 
 h2_gen_mix = h2_gen_mix.rename(index=lambda x: x.replace("1","").replace("0","")).droplevel(0)
 
@@ -1635,9 +1643,11 @@ store = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H
 elec = nodal_capacities.loc[nodal_capacities.index.get_level_values(2).isin(["H2 Electrolysis"])].drop("cfe", axis=1)
 supply_energy.drop("cfe", axis=1, level=0,inplace=True, errors="ignore")
 policy_order = [rename_scenarios[x] for x in plot_scenarios[""]]
+ci_name = snakemake.config['ci']["name"]
+
 for volume in res.columns.levels[2]:
 
-    caps = res.xs((res_share, volume), level=[1,2], axis=1).xs("H2procuder", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
+    caps = res.xs((res_share, volume), level=[1,2], axis=1).xs(f"{ci_name}", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
     caps = caps.stack().reindex(wished_policies, axis=1).fillna(0).unstack()
     caps = caps.reindex(wished_order, level=1, axis=1)
     caps.rename(columns=rename_scenarios,
@@ -1662,7 +1672,7 @@ for volume in res.columns.levels[2]:
     plt.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"capacities_RES_{volume}volume.pdf",
                     bbox_inches='tight')
 
-    caps = elec.xs((res_share, volume), level=[1,2], axis=1).xs("H2procuder", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
+    caps = elec.xs((res_share, volume), level=[1,2], axis=1).xs(f"{ci_name}", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
     caps = caps.stack().reindex(wished_policies, axis=1).fillna(0).unstack()
     caps = caps.reindex(wished_order, level=1, axis=1)
     caps.rename(columns=rename_scenarios,
@@ -1687,7 +1697,7 @@ for volume in res.columns.levels[2]:
                     bbox_inches='tight')
 
 
-    caps = store.xs((res_share, volume), level=[1,2], axis=1).xs("H2procuder", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
+    caps = store.xs((res_share, volume), level=[1,2], axis=1).xs(f"{ci_name}", level=1).droplevel(0).reindex(wished_policies, level=0, axis=1).fillna(0)
     caps = caps.stack().reindex(wished_policies, axis=1).fillna(0).unstack()
     caps = caps.reindex(wished_order, level=1, axis=1)
     caps.rename(columns=rename_scenarios,
@@ -1729,7 +1739,7 @@ for volume in res.columns.levels[2]:
         if carrier=="all":
             d = d.droplevel(1, axis=1)
         else:
-            d = d.xs("H2procuder", axis=1,level=1)
+            d = d.xs(f"{ci_name}", axis=1,level=1)
         d = d.reindex(columns=policy_order)
         fig, ax = plt.subplots(nrows=1, ncols=len(d.columns), sharey=True, figsize=(9,3.5))
         for i, policy in enumerate(d.columns):
@@ -1761,9 +1771,9 @@ for volume in res.columns.levels[2]:
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"export_import_{volume}volume.pdf",
                 bbox_inches='tight')
 
-    plot_duration_curve(cf, "H2procuder H2 Electrolysis", wished_policies, wished_order, volume,
+    plot_duration_curve(cf, f"{ci_name} H2 Electrolysis", wished_policies, wished_order, volume,
                         name="electrolysis")
-    plot_duration_curve(cf, "H2procuder H2 Store", wished_policies, wished_order, volume,
+    plot_duration_curve(cf, f"{ci_name} H2 Store", wished_policies, wished_order, volume,
                         name="store")
 #%%
 # volume = "3200.0"
@@ -1854,9 +1864,9 @@ for volume in res.columns.levels[2]:
 #                   override_component_attrs=override_component_attrs())
 # m = pypsa.Network("/home/lisa/mnt/247-cfe/results/remove_one_snapshot/networks/10/2025/DE/p1/res1p0_p0_3200volume_mtank.nc",
 #                   override_component_attrs=override_component_attrs())
-# htank = n.generators_t.p.loc[:,n.generators.bus=="H2procuder"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
+# htank = n.generators_t.p.loc[:,n.generators.bus==f"{ci_name}"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
 # htank = pd.concat([htank], keys=["htank"], axis=1)
-# mtank = m.generators_t.p.loc[:,n.generators.bus=="H2procuder"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
+# mtank = m.generators_t.p.loc[:,n.generators.bus==f"{ci_name}"].groupby(n.generators.carrier, axis=1).sum()[["onwind", "solar"]]
 # mtank = pd.concat([mtank], keys=["mtank"], axis=1)
 # together = pd.concat([mtank, htank], axis=1)
 # fig, ax = plt.subplots()

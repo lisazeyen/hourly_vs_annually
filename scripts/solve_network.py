@@ -204,10 +204,8 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year):
             'investment':  allam_ccs_overnight * 1e3 * 1,
             'lifetime': 30.0
             }, name="allam_ccs")
-
-    costs = costs.append(data_nuc, ignore_index=False)
-    costs = costs.append(data_geo, ignore_index=False)
-    costs = costs.append(data_allam, ignore_index=False)
+    
+    costs = pd.concat([costs, data_nuc, data_geo, data_allam])
 
     annuity_factor = lambda v: annuity(v["lifetime"], v["discount rate"]) + v["FOM"] / 100
     costs["fixed"] = [annuity_factor(v) * v["investment"] * Nyears for i, v in costs.iterrows()]
@@ -672,7 +670,7 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('solve_base_network',
                                 policy="ref", palette='p1', zone='DE', year='2025',
-                                participation='10', res_share="p10")
+                                participation='10', res_share="p0")
 
     logging.basicConfig(filename=snakemake.log.python,
                     level=snakemake.config['logging_level'])
@@ -730,6 +728,9 @@ if __name__ == "__main__":
         add_ci(n, policy, participation, year)
 
         solve_network(n, policy, penetration, tech_palette)
+        
+        for key in ['p0', 'p1', 'p2', 'p3', 'p4']:
+            n.links_t[key] = n.links_t[key].astype(float)
 
         n.export_to_netcdf(snakemake.output.network)
 

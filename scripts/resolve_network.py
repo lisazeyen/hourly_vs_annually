@@ -178,8 +178,8 @@ def add_dummies(n):
 solver_name = "gurobi"
 
 solver_options = {"method" : 2,
-                  # "crossover" : 0,
-                  "BarConvTol": 1.e-5}
+                  "crossover" : 0,
+                  "BarConvTol": 1.e-7}
 def solve(policy):
 
     n = pypsa.Network(snakemake.input.base_network,
@@ -319,7 +319,7 @@ if __name__ == "__main__":
                                 policy="monthly", palette='p1', zone='DE', year='2025',
                                 participation='10',
                                 res_share="p0",
-                                offtake_volume="2000",
+                                offtake_volume="3200",
                                 storage="nostore")
 
     logging.basicConfig(filename=snakemake.log.python,
@@ -355,6 +355,11 @@ if __name__ == "__main__":
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
         n = solve(policy)
+        
+                
+        for key in ['p0', 'p1', 'p2', 'p3', 'p4']:
+            n.links_t[key] = n.links_t[key].astype(float)
+            
         n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))
