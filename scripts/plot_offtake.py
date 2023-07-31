@@ -13,12 +13,12 @@ if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if 'snakemake' not in globals():
         import os
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/scripts")
+        os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
-                                   zone='PL', year='2030',  participation='10',
+                                   zone='DE', year='2025',  participation='10',
                                    policy="ref")
-        os.chdir("/home/lisa/Documents/hourly_vs_annually/")
+        os.chdir("/home/lisa/mnt/")
 
 LHV_H2 = 33.33 # lower heating value [kWh/kg_H2]
 
@@ -449,7 +449,7 @@ def plot_cf(df, wished_policies, wished_order, volume, name=""):
 
 def plot_consequential_emissions(emissions, supply_energy, wished_policies,
                                  wished_order, volume, name=""):
-    compare_p = "offgrid" # "ref" if snakemake.config["solving_option"]!="together" else "offgrid"
+    compare_p = "ref" # "ref" if snakemake.config["solving_option"]!="together" else "offgrid"
     # consequential emissions
     emissions = emissions[~emissions.index.duplicated()]
     wished = wished_policies + [compare_p] if compare_p not in wished_policies else wished_policies[:]
@@ -515,7 +515,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
         if em_p[em_p<0].sum().min()<y_min: y_min = em_p[em_p<0].sum().min()
         if em_p[em_p>0].sum().max()>y_max: y_max = em_p[em_p>0].sum().max()
     ax[0].set_ylim([1.1*y_min, 1.1*y_max])
-    ax[0].set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
+    ax[0].set_ylabel("consequential emissions \n compared to reference \n [kg$_{CO_2}$/kg$_{H_2}$]")
     plt.legend(fontsize=9, bbox_to_anchor=(1,1))
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
                 bbox_inches="tight")
@@ -691,7 +691,7 @@ def plot_price_duration(weighted_prices_t, wished_policies, volume, name):
         price_duration.rename(columns=rename_scenarios, level=0, inplace=True)
         
         fig, ax = plt.subplots()
-        price_duration.plot(ax=ax)
+        price_duration.iloc[:-3].plot(ax=ax).legend(bbox_to_anchor=(1,1))
         ax.set_ylabel("Eur/MWh")
         ax.set_xlabel("hours")
         ax.grid(alpha=0.3)
@@ -700,7 +700,7 @@ def plot_price_duration(weighted_prices_t, wished_policies, volume, name):
         fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"price_duration_{volume}{name}{region}.pdf",
                     bbox_inches='tight')
         
-    price_t = weighted_prices_t.xs((res_share, volume), level=[1,2], axis=1)[wished_policies]
+    price_t = weighted_prices_t.xs((res_share, volume), level=[1,2], axis=1)[wished_policies+ ["ref"]]
     price_t_rest = price_t.drop("CI", level=2, axis=1)
     plot_price(price_t_rest, region="")
     price_t_CI = price_t.xs("CI", level=2, axis=1)
@@ -855,7 +855,7 @@ for volume in a.index.get_level_values(2).unique():
                                 name=name, carrier="AC")
         
         # price duration curve
-        # plot_price_duration(weighted_prices_t, wished_policies, volume, name)
+        plot_price_duration(weighted_prices_t, wished_policies, volume, name)
 
         # generation mix of H2
         plot_h2genmix(h2_gen_mix, wished_policies, wished_order, str(volume),
@@ -1053,16 +1053,20 @@ def calculate_nodal_supply_energy(n, label, supply_energy):
 
 # import pypsa
 # from _helpers import override_component_attrs
-# run = "DE_NL_avoid_suboptimal"
+# run = snakemake.config["run"]
 # labels = pd.MultiIndex.from_product([[2025, 2030], ["DE", "NL", "ES", "CZ", "PL", "PT"]], names=["year", "ct"])
+# # labels = pd.MultiIndex.from_product([[2025, 2030], ["DE", "NL"]], names=["year", "ct"])
 # supply_energy = pd.DataFrame(columns=labels)
 
 # for label in labels:
 #     year = label[0]
 #     ct = label[1]
 #     print(year, ct)
-#     n = pypsa.Network(f"/home/lisa/mnt/hourly_vs_annually_copy/results/{run}/base/{year}/{ct}/p1/base_p0_3200volume.nc",
-#                       override_component_attrs=override_component_attrs())
+#     try:
+#         n = pypsa.Network(f"/home/lisa/mnt/hourly_vs_annually_copy/results/{run}/base/{year}/{ct}/p1/base_p0_3200volume.nc",
+#                           override_component_attrs=override_component_attrs())
+#     except:
+#         continue
 #     supply_energy = calculate_nodal_supply_energy(n, label, supply_energy)
 
 # supply_energy.to_csv(f"/home/lisa/Documents/hourly_vs_annually/results/{run}/csvs/nodal_supply_energy_together.csv")
@@ -1080,7 +1084,7 @@ def calculate_nodal_supply_energy(n, label, supply_energy):
 # df = tot_generation.loc[v]
 # df = df.droplevel(level=[0,1])
 
-# #convert MWh to TWh
+# # convert MWh to TWh
 # df = df / 1e6
 
 # final = {}
