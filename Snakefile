@@ -79,7 +79,7 @@ rule solve_base_network:
         python=RDIR + "/logs/{participation}/{year}/{zone}/{palette}/base_{res_share}_python.log",
         memory=RDIR + "/logs/{participation}/{year}/{zone}/{palette}/base_{res_share}_memory.log"
     threads: 12
-    resources: mem_mb=8000
+    resources: mem_mb=16000
     script: "scripts/solve_network.py"
 
 
@@ -115,6 +115,7 @@ rule summarise_offtake:
         csvs_emission_rate=RDIR + "/csvs/{participation}/{year}/{zone}/{palette}/emission_rate.csv",
         csvs_h2_gen_mix=RDIR + "/csvs/{participation}/{year}/{zone}/{palette}/h2_gen_mix.csv",
         csvs_attr_emissions=RDIR + "/csvs/{participation}/{year}/{zone}/{palette}/attr_emissions.csv",
+        csvs_price_duration=RDIR + "/csvs/{participation}/{year}/{zone}/{palette}/price_duration.csv",
         cf_plot = RDIR + "/graphs/{participation}/{year}/{zone}/{palette}/cf_electrolysis.pdf",
     threads: 2
     resources: mem=2000
