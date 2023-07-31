@@ -12,7 +12,7 @@ n_2030: 'input/elec_s_37_lv1.0__1H-B-solar+p3_2030.nc'
 ###################
 # Scenario controls
 
-run: 'DE_NL_avoid_suboptimal'
+run: 'gas_price50'
 
 #wildcards
 scenario:
@@ -23,13 +23,14 @@ scenario:
   # exl: like cfe100 but excess limited to 20%
   palette: [ "p1", # onwind + solar + battery
             ]
-  zone: [ "DE", "NL"
+  zone: [ "DE", "NL", # "ES", "PT", "CZ", "PL"
         ]
   year: ['2025', '2030'] # controls both the brownfield fleet and tech costs projection
   res_share: [p0] #, p01, p10, p20, p30, p35, p40, p45, p50, p55, p60, p70, p80, p90, 1p0]  # [EUR/kg_H2] fixed offtake price of H2
   offtake_volume: [3200] # [2233,3200, 6700]  # [MWh_H2 per h] fixed offtake volume per hour, 10 GB planned in DE by 2030 if run 100% 10GB*0.67=6700MWh/h
   storage: ["flexibledemand", "underground", "mtank", "htank", "nostore"]  # storage type at google node
   h2_demand_added: False
+  DE_target: True
   temporal_resolution: "1H"
 
 
@@ -68,7 +69,8 @@ additional_nodes: ["EU oil","EU gas", "EU lignite", "EU coal", "EU uranium", "EU
 
 global:
   must_run: False  # must run condition for coal power plants
-  uc: True  # unit commitment for conventional plants
+  uc: False  # unit commitment for conventional plants
+  linear_uc: False
   policy_type: "co2 price" # one of ["co2 cap", "co2 price"]
   co2_baseline: 1.2e+7  # MtCO2/a - rough "energy industries" emissions in 1990 and 2020 in IE: 1.2e7
   co2_share: 0.5 #pu  - rough target for 2030
@@ -110,10 +112,10 @@ costs:
   adv_geo_overnight_2030: 10000  # 2022$/kW CAPEX
   allam_ccs_overnight_2025: 2760 # 2022$/kW CAPEX, 2300*1.2
   allam_ccs_overnight_2030: 3000 # 2022$/kW CAPEX, 2500*1.2
-  price_lignite: 6.5 # EUR/MWhth from TYNDP2020 -> default is 2.9
+  price_lignite: 6.5 # 6.5 # EUR/MWhth from TYNDP2020 -> default is 2.9
   price_coal: 8.9 # EUR/MWhth from TYNDP2020 -> default is 8.15
   # price_gas: 35 # EUR/MWhth -> https://energy.ec.europa.eu/system/files/2022-05/SWD_2022_230_1_EN_autre_document_travail_service_part1_v3.pdf
-  price_gas: 50.0 # https://www.powernext.com/futures-market-data
+  price_gas: 50.0 # hps://www.powernext.com/futures-market-data
   # price_oil = 50.0 # EUR/MWhth -> TYNDP2020 = default
   # price_uranium = 1.7 EUR/MWhth -> TYNDP2020  is 2.6
   # TYNDP2020: https://2022.entsos-tyndp-scenarios.eu/download/
@@ -184,14 +186,14 @@ solving:
     method: 2 # barrier
     crossover: 0
     # NumericFocus: 3       # Favour numeric stability over speed
-    BarConvTol: 1.e-4
-    FeasibilityTol: 1.e-4
-    OptimalityTol: 1.e-4
+    BarConvTol: 1.e-7
+    # FeasibilityTol: 1.e-6
+    # OptimalityTol: 1.e-6
     Seed: 123
     AggFill: 0
     PreDual: 0
     NodeMethod: 2 # algorithm used for MIP node relaxation, 2=barrier
-    MIPGap: 0.03    # 5% gap between (ObjBound-ObjVal)/ObjVal
+    MIPGap: 0.01    # 5% gap between (ObjBound-ObjVal)/ObjVal
     GURO_PAR_BARDENSETHRESH: 200
 
 
