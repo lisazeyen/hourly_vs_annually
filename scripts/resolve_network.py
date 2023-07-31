@@ -6,6 +6,8 @@ from pypsa.linopt import get_var, linexpr, join_exprs, define_constraints
 import logging
 logger = logging.getLogger(__name__)
 
+import sys
+
 # Suppress logging of the slack bus choices
 pypsa.pf.logger.setLevel(logging.WARNING)
 
@@ -14,24 +16,22 @@ from vresutils.benchmark import memory_logger
 
 from _helpers import override_component_attrs
 
-from solve_network import (geoscope, freeze_capacities, add_battery_constraints,
-                           biomass_generation_constraint)
+from solve_network import geoscope
 
 
 
-def add_H2(n, snakemake):
+def freeze_capacities(n):
 
-    zone = snakemake.wildcards.zone
-    area = snakemake.config['area']
-    name = snakemake.config['ci']['name']
-    policy = snakemake.wildcards.policy
-    node = geoscope(n, zone, area)['node']
-    year = snakemake.wildcards.year
+    for name, attr in [("generators","p"),("links","p"),("stores","e")]:
+        df = getattr(n,name)
+        df[attr + "_nom_extendable"] = False
+        df[attr + "_nom"] = df[attr + "_nom_opt"]
 
-    # remove electricity demand of electrolysis
-    load_i = pd.Index([f"{node} electrolysis demand"])
-    if load_i[0] in n.loads.index:
-        n.mremove("Load", load_i)
+    #allow more emissions
+    n.stores.at["co2 atmosphere","e_nom"] *=2
+
+def add_H2(n):
+
     if policy == "ref":
         return None
 
@@ -90,9 +90,7 @@ def add_H2(n, snakemake):
         carrier="H2 Store",
         capital_cost = store_cost,
 		)
-    
-    eff_electrolysis = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
-    max_elec = float(offtake_volume) / eff_electrolysis
+
     if any([x in policy for x in ["res", "cfe", "exl", "monthly"]]):
         n.add("Link",
               name + " export",
@@ -100,7 +98,7 @@ def add_H2(n, snakemake):
               bus1=node,
               carrier="export",
               marginal_cost=0.1, #large enough to avoid optimization artifacts, small enough not to influence PPA portfolio
-              p_nom=max_elec)
+              p_nom=1e6)
 
     if any([x in policy for x in ["res", "grd", "monthly"]]):
         n.add("Link",
@@ -168,7 +166,7 @@ def add_H2(n, snakemake):
 def add_dummies(n):
     elec_buses = n.buses.index[n.buses.carrier == "AC"]
 
-    logger.info(f"adding dummies to {elec_buses}")
+    print("adding dummies to",elec_buses)
     n.madd("Generator",
             elec_buses + " dummy",
             bus=elec_buses,
@@ -177,134 +175,139 @@ def add_dummies(n):
             marginal_cost=1e6)
 
 
-def res_constraints(n, snakemake):
-    print("set annual matching constraint")
+solver_name = "gurobi"
 
-    ci = snakemake.config['ci']
-    name = snakemake.config['ci']['name']
-    policy = snakemake.wildcards.policy
+solver_options = {"method" : 2,
+                  # "crossover" : 0,
+                  "BarConvTol": 1.e-5}
+def solve(policy):
 
-    weights = n.snapshot_weightings["generators"]
+    n = pypsa.Network(snakemake.input.base_network,
+                      override_component_attrs=override_component_attrs())
 
-    res_gens = [name + " " + g for g in ci['res_techs']]
+    freeze_capacities(n)
 
+    add_H2(n)
 
-    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum()
-
-    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights).sum()
-
-    lhs = res - electrolysis
-
-    n.model.add_constraints(lhs >= 0, name="RES_annual_matching")
+    add_dummies(n)
 
 
-    allowed_excess = float(policy.replace("res","").replace("p","."))
+    def res_constraints(n):
 
-    lhs = res - (electrolysis*allowed_excess)
+        ci = snakemake.config['ci']
+        name = ci['name']
 
-    n.model.add_constraints(lhs <= 0, name="RES_annual_matching_excess")
+        res_gens = [name + " " + g for g in ci['res_techs']]
 
+        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                                  index = n.snapshots,
+                                  columns = res_gens)
+        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
 
-def monthly_constraints(n, snakemake):
+        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
+        allowed_excess = float(policy.replace("res","").replace("p","."))
+        load = join_exprs(linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis)))
 
-    ci = snakemake.config['ci']
-    name = ci['name']
+        lhs = res + "\n" + load
 
-    res_gens = [name + " " + g for g in ci['res_techs']]
-    weights = n.snapshot_weightings["generators"]
-
-    res = (n.model['Generator-p'].loc[:,res_gens] * weights).sum("Generator")
-    res = res.groupby("snapshot.month").sum()
-
-
-    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights)
-    # allowed_excess = float(policy.replace("monthly","").replace("p","."))
-    allowed_excess = 1
-    load =  electrolysis.groupby("snapshot.month").sum()
-    lhs = res - load
-
-    n.model.add_constraints(lhs == 0, name="RES_monthly_matching")
+        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints','REStarget')
 
 
-def excess_constraints(n, snakemake):
-
-    ci = snakemake.config['ci']
-    name = ci['name']
-    policy = snakemake.wildcards.policy
-
-    weights = n.snapshot_weightings["generators"]
-    
-    export_i = n.links[n.links.carrier=="export"].index
-    
-    export = (n.model["Link-p"].loc[:, export_i] * weights).sum()
-    # breakpoint()
-
-    electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights).sum()
+    def monthly_constraints(n):
 
 
-    # there is no import so I think we don't need this constraint
-    # con = define_constraints(n, lhs, '>=', 0., 'RESconstraints','REStarget')
+        ci = snakemake.config['ci']
+        name = ci['name']
 
-    allowed_excess = float(policy.replace("exl","").replace("p","."))-1
+        res_gens = [name + " " + g for g in ci['res_techs']]
 
+        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                                  index = n.snapshots,
+                                  columns = res_gens)
+        res = linexpr((weightings,get_var(n, "Generator", "p")[res_gens])).sum(axis=1) # single line sum
+        res = res.groupby(res.index.month).sum()
 
-    lhs = export - electrolysis*allowed_excess
+        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
 
-    n.model.add_constraints(lhs <= 0, name="RES_hourly_excess")
+        # allowed_excess = float(policy.replace("monthly","").replace("p","."))
+        allowed_excess = 1
+        load = linexpr((-allowed_excess * n.snapshot_weightings["generators"],electrolysis))
 
+        load = load.groupby(load.index.month).sum()
 
-def solve(policy, n):
+        for i in range(len(res.index)):
+            lhs = res.iloc[i] + "\n" + load.iloc[i]
+
+            con = define_constraints(n, lhs, '<=', 0., f'RESconstraints_{i}',f'REStarget_{i}')
+
+    def excess_constraints(n):
+
+        res_gens = [f"{name} onwind",f"{name} solar"]
+
+        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                                  index = n.snapshots,
+                                  columns = res_gens)
+        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+
+        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+        allowed_excess = float(policy.replace("exl","").replace("p","."))
+
+        load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
+
+        lhs = res + "\n" + load
+
+        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints','REStarget')
+
+    def add_battery_constraints(n):
+
+        chargers_b = n.links.carrier.str.contains("battery charger")
+        chargers = n.links.index[chargers_b & n.links.p_nom_extendable]
+        dischargers = chargers.str.replace("charger", "discharger")
+
+        if chargers.empty or ('Link', 'p_nom') not in n.variables.index:
+            return
+
+        link_p_nom = get_var(n, "Link", "p_nom")
+
+        lhs = linexpr((1,link_p_nom[chargers]),
+                      (-n.links.loc[dischargers, "efficiency"].values,
+                       link_p_nom[dischargers].values))
+
+        define_constraints(n, lhs, "=", 0, 'Link', 'charger_ratio')
 
     def extra_functionality(n, snapshots):
 
         add_battery_constraints(n)
-        biomass_generation_constraint(n, snakemake)
 
         if "res" in policy:
-            logger.info("setting annual RES target")
-            res_constraints(n, snakemake)
+            print("setting annual RES target")
+            res_constraints(n)
         if "monthly" in policy:
-            logger.info("setting monthly RES target")
-            monthly_constraints(n, snakemake)
+            print("setting monthly RES target")
+            monthly_constraints(n)
         elif "exl" in policy:
-            logger.info("setting excess limit on hourly matching")
-            excess_constraints(n, snakemake)
+            print("setting excess limit on hourly matching")
+            excess_constraints(n)
 
     fn = getattr(snakemake.log, 'memory', None)
 
-    linearized_uc = snakemake.config["global"]["linear_uc"]
-    
-    if linearized_uc:
-        logger.info("Adding linearised unit commitment.")
 
-    solver_options = snakemake.config["solving"]["solver"]
-    solver_name = solver_options["name"]
-    result, message = n.optimize(
+    result, message = n.lopf(pyomo=False,
            extra_functionality=extra_functionality,
            solver_name=solver_name,
            solver_options=solver_options,
-           log_fn=snakemake.log.solver,
-           linearized_unit_commitment=linearized_uc)
+           solver_logfile=snakemake.log.solver)
 
-
-    if result != "ok" or message != "optimal":
-        logger.info(f"solver ended with {result} and {message}, so re-running")
-        # solver_options["crossover"] = 1
-        solver_options["NumericFocus"] = 3
-        solver_options["OptimalityTol"] = 1e-5
-        result, message = n.optimize(
-                extra_functionality=extra_functionality,
-                solver_name=solver_name,
-                solver_options=solver_options,
-                log_fn=snakemake.log.solver,
-                linearized_unit_commitment=linearized_uc,
-                assign_all_duals=True)
-
+    # if result != "ok" or message != "optimal":
+    #     print(f"solver ended with {result} and {message}, so quitting")
+    #     sys.exit()
 
 
 
     return n
+
 
 
 #%%
@@ -313,51 +316,45 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="ref", palette='p1', zone='DE',
-                                year='2030',
+                                policy="monthly", palette='p1', zone='DE', year='2025',
+                                participation='10',
                                 res_share="p0",
-                                offtake_volume="6400",
-                                storage="flexibledemand")
+                                offtake_volume="2000",
+                                storage="nostore")
 
     logging.basicConfig(filename=snakemake.log.python,
                     level=snakemake.config['logging_level'])
 
-    n = pypsa.Network(snakemake.input.base_network,
-                      override_component_attrs=override_component_attrs())
-    
-
 
     policy = snakemake.wildcards.policy
-    logger.info(f"solving network for policy: {policy}")
+    print(f"solving network for policy: {policy}")
 
     name = snakemake.config['ci']['name']
 
+    participation = snakemake.wildcards.participation
+    print(f"solving with participation: {participation}")
+
     zone = snakemake.wildcards.zone
-    logger.info(f"solving network for bidding zone: {zone}")
+    print(f"solving network for bidding zone: {zone}")
 
     year = snakemake.wildcards.year
-    logger.info(f"solving network year: {year}")
+    print(f"solving network year: {year}")
 
     area = snakemake.config['area']
-    logger.info(f"solving with geoscope: {area}")
+    print(f"solving with geoscope: {area}")
 
-    node = geoscope(n, zone, area)['node']
-    logger.info(f"solving with node: {node}")
+    node = geoscope(zone, area)['node']
+    print(f"solving with node: {node}")
 
-    # freeze_capacities(n)
-    
-    if len(n.generators[n.generators.p_nom_extendable])>5:
-        import sys
-        logger.info("Warning something wrong with freezing capacities")
-        sys.exit()
+    ci_load = snakemake.config['ci_load'][f'{zone}']
+    load = ci_load * float(participation)/100  #C&I baseload MW
 
-    add_H2(n, snakemake)
+    print(f"solving with load: {load}")
 
-    add_dummies(n)
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
-        n = solve(policy, n)
+        n = solve(policy)
         n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))

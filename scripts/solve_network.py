@@ -38,45 +38,72 @@ def palette(tech_palette):
         storage_dischargers = ["battery discharger", "H2 Fuel Cell"]
 
     else:
-        logger.info(f"'palette' wildcard must be one of 'p1', 'p2' or 'p3'. Now is {tech_palette}.")
+        print(f"'palette' wildcard must be one of 'p1', 'p2' or 'p3'. Now is {tech_palette}.")
         sys.exit()
 
     return clean_techs, storage_techs, storage_chargers, storage_dischargers
 
 
-def geoscope(n, zone, area):
+def geoscope(zone, area):
     '''
     basenodes_to_keep -> geographical scope of the model
     country_nodes -> scope for national RES policy constraint
     node -> zone where C&I load is located
     '''
-    def get_neighbours(zone):
-        buses = {}
-        for c in ["Line", "Link"]:
-            items = ((n.df(c).bus0.str.contains(zone) | n.df(c).bus1.str.contains(zone))
-                     & n.df(c).carrier.isin(["", "DC"]))
-            buses[c] = n.df(c).loc[items, ["bus0", "bus1"]].values
-        neighbors = pd.Index(np.concatenate((buses["Line"],
-                                             buses["Link"])).ravel("K"))
-        basenodes = n.buses[(n.buses.index.str[:2].isin(neighbors.str[:2]))
-                            &(n.buses.carrier=="AC")].index
-        return basenodes
+    d = dict();
 
-    d = {}
+    if zone == 'IE':
+        d['basenodes_to_keep'] = ["IE5 0", "GB0 0", "GB5 0"]
+        d['country_nodes'] = ["IE5 0"]
+        d['node'] = "IE5 0"
 
-    d['country_nodes'] = n.buses[(n.buses.index.str[:2].isin([zone]))
-                                 & (n.buses.carrier=="AC")].index
-    d['node'] = d['country_nodes'][:1][0]
+    elif zone == 'DK':
+        d['basenodes_to_keep'] = ["DK1 0", "DK2 0", "SE2 0", "NO2 0", "NL1 0", "DE1 0"]
+        d['country_nodes'] = ["DK1 0", "DK2 0"]
+        d['node'] = "DK1 0"
+
+    elif zone == 'DE':
+        d['basenodes_to_keep'] = ['DE1 0', 'BE1 0', 'NO2 0', 'DK1 0', 'DK2 0', 'SE2 0', 'GB0 0',
+                                  'FR1 0', 'LU1 0', 'NL1 0', 'PL1 0', 'AT1 0', 'CH1 0', 'CZ1 0']
+        d['country_nodes'] = ['DE1 0']
+        d['node'] = 'DE1 0'
+
+    elif zone == 'NL':
+        d['basenodes_to_keep'] = ['DE1 0', 'BE1 0', 'NO2 0', 'DK1 0', 'DK2 0', 'SE2 0', 'GB0 0',
+                                  'FR1 0', 'LU1 0', 'NL1 0', 'PL1 0', 'AT1 0', 'CH1 0', 'CZ1 0']
+        d['country_nodes'] = ['NL1 0']
+        d['node'] = 'NL1 0'
+
+    elif zone == 'PL':
+        d['basenodes_to_keep'] = ['DE1 0', 'BE1 0', 'NO2 0', 'DK1 0', 'DK2 0', 'SE2 0', 'GB0 0',
+                                  'FR1 0', 'LU1 0', 'NL1 0', 'PL1 0', 'AT1 0', 'CH1 0', 'CZ1 0']
+        d['country_nodes'] = ['PL1 0']
+        d['node'] = 'PL1 0'
+
+    elif zone == 'CZ':
+        d['basenodes_to_keep'] = ['DE1 0', 'BE1 0', 'NO2 0', 'DK1 0', 'DK2 0', 'SE2 0', 'GB0 0',
+                                  'FR1 0', 'LU1 0', 'NL1 0', 'PL1 0', 'AT1 0', 'CH1 0', 'CZ1 0']
+        d['country_nodes'] = ['CZ1 0']
+        d['node'] = 'CZ1 0'
+
+    else:
+        print(f"'zone' wildcard must be one of 'IE', 'DK', 'DE', 'NL', 'PL'. Now is {zone}.")
+        sys.exit()
 
     if area == 'EU':
-        d['basenodes_to_keep'] = n.buses[n.buses.carrier=="AC"].index
-    else:
-        d['basenodes_to_keep'] = get_neighbours(zone)
+        d['basenodes_to_keep'] = ['AL1 0', 'AT1 0',  'BA1 0',  'BE1 0',  'BG1 0',
+            'CH1 0', 'CZ1 0',  'DE1 0',  'DK1 0',  'DK2 0',
+            'EE6 0', 'ES1 0',  'ES4 0',  'FI2 0',  'FR1 0',
+            'GB0 0', 'GB5 0',  'GR1 0',  'HR1 0',  'HU1 0',
+            'IE5 0', 'IT1 0',  'IT3 0',  'LT6 0',  'LU1 0',
+            'LV6 0', 'ME1 0',  'MK1 0',  'NL1 0',  'NO2 0',
+            'PL1 0', 'PT1 0',  'RO1 0',  'RS1 0',  'SE2 0',
+            'SI1 0', 'SK1 0']
 
     return d
 
 
-def timescope(zone, year, snakemake):
+def timescope(zone, year):
     '''
     country_res_target -> value of national RES policy constraint for {year} and {zone}
     coal_phaseout -> countries that implement coal phase-out policy until {year}
@@ -84,16 +111,25 @@ def timescope(zone, year, snakemake):
     costs_projection -> input file with technology costs for {year}
     '''
 
-    d = {}
+    d = dict();
 
     d['country_res_target'] = snakemake.config[f'res_target_{year}'][f'{zone}']
-    d['network_file'] = snakemake.input[f"network{year}"]
-    d['costs_projection']  = snakemake.input[f"costs{year}"]
+    d['coal_phaseout'] = snakemake.config[f'policy_{year}']
+
+    if year == '2030':
+        d['network_file']  = snakemake.input.network2030
+        d['costs_projection'] = snakemake.input.costs2030
+    elif year == '2025':
+        d['network_file']  = snakemake.input.network2025
+        d['costs_projection'] = snakemake.input.costs2025
+    else:
+        print(f"'year' wildcard must be one of '2025', '2030'. Now is {year}.")
+        sys.exit()
 
     return d
 
 
-def cost_parametrization(n, snakemake):
+def cost_parametrization(n):
     '''
     overwrite default price assumptions for primary energy carriers
     only for virtual generators located in 'EU {carrier}' buses
@@ -101,12 +137,12 @@ def cost_parametrization(n, snakemake):
 
     for carrier in ['lignite', 'coal', 'gas']:
         n.generators.loc[n.generators.index.str.contains(f'EU {carrier}'), 'marginal_cost'] = snakemake.config['costs'][f'price_{carrier}']
-
+    #n.generators[n.generators.index.str.contains('EU')].T
+    # adjust wrongly set VOM of onshore wind
     n.generators.loc[n.generators.carrier=="onwind", "marginal_cost"] = 0.015
 
 
-def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
-                  snakemake):
+def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year):
 
     #set all asset costs and other parameters
     costs = pd.read_csv(cost_file, index_col=[0,1]).sort_index()
@@ -128,7 +164,7 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
     })
 
     # Advanced nuclear
-    data_nuc = pd.DataFrame({'CO2 intensity': 0,
+    data_nuc = pd.Series({'CO2 intensity': 0,
             'FOM': costs.loc['nuclear']['FOM'],
             'VOM': costs.loc['nuclear']['VOM'],
             'discount rate': discount_rate,
@@ -136,13 +172,17 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
             'fuel': costs.loc['nuclear']['fuel'],
             'investment': snakemake.config['costs']['adv_nuclear_overnight'] * 1e3 * snakemake.config['costs']['USD2021_to_EUR2021'],
             'lifetime': 40.0
-            }, index=["adv_nuclear"])
+            }, name="adv_nuclear")
 
-    adv_geo_overnight = snakemake.config['costs'][f'adv_geo_overnight_{year}']
-    allam_ccs_overnight = snakemake.config['costs'][f'allam_ccs_overnight_{year}']
+    if year == '2025':
+        adv_geo_overnight = snakemake.config['costs']['adv_geo_overnight_2025']
+        allam_ccs_overnight = snakemake.config['costs']['allam_ccs_overnight_2025']
+    elif year == '2030':
+        adv_geo_overnight = snakemake.config['costs']['adv_geo_overnight_2030']
+        allam_ccs_overnight = snakemake.config['costs']['allam_ccs_overnight_2030']
 
     # Advanced geothermal
-    data_geo = pd.DataFrame({'CO2 intensity': 0,
+    data_geo = pd.Series({'CO2 intensity': 0,
             'FOM': 0,
             'VOM': 0,
             'discount rate': discount_rate,
@@ -150,10 +190,10 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
             'fuel': 0,
             'investment':  adv_geo_overnight * 1e3 * 1,
             'lifetime': 30.0
-            }, index=["adv_geothermal"])
+            }, name="adv_geothermal")
 
     # Allam cycle ccs
-    data_allam = pd.DataFrame({'CO2 intensity': 0,
+    data_allam = pd.Series({'CO2 intensity': 0,
             'FOM': 0, #%/year
             'FOM-abs' : 33000, #$/MW-yr
             'VOM': 3.2, #EUR/MWh
@@ -163,9 +203,11 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
             'fuel': snakemake.config['costs']['price_gas'],
             'investment':  allam_ccs_overnight * 1e3 * 1,
             'lifetime': 30.0
-            }, index=["allam_ccs"])
+            }, name="allam_ccs")
 
-    costs = pd.concat([costs, data_nuc, data_geo, data_allam])
+    costs = costs.append(data_nuc, ignore_index=False)
+    costs = costs.append(data_geo, ignore_index=False)
+    costs = costs.append(data_allam, ignore_index=False)
 
     annuity_factor = lambda v: annuity(v["lifetime"], v["discount rate"]) + v["FOM"] / 100
     costs["fixed"] = [annuity_factor(v) * v["investment"] * Nyears for i, v in costs.iterrows()]
@@ -173,17 +215,19 @@ def prepare_costs(cost_file, USD_to_EUR, discount_rate, Nyears, lifetime, year,
     return costs
 
 
-def strip_network(n, zone, area, snakemake):
+def strip_network(n):
     # buses to keep
-    nodes_to_keep = geoscope(n, zone, area)['basenodes_to_keep']
-    new_nodes = pd.Index([bus + " " + suffix for bus in nodes_to_keep for
-                          suffix in snakemake.config["node_suffixes_to_keep"]])
-    nodes_to_keep = nodes_to_keep.union(new_nodes).union(snakemake.config['additional_nodes'])
+    nodes_to_keep = geoscope(zone, area)['basenodes_to_keep']
+    new_nodes = [b + " " + s for b in nodes_to_keep for s in
+                 snakemake.config["node_suffixes_to_keep"]]
+    nodes_to_keep.extend(new_nodes)
+    nodes_to_keep.extend(snakemake.config['additional_nodes'])
 
     n.mremove('Bus', n.buses.index.symmetric_difference(nodes_to_keep))
 
-    # make sure lines are kept
+    #make sure lines are kept
     n.lines.carrier = "AC"
+
     carrier_to_keep = snakemake.config['carrier_to_keep']
 
     for c in n.iterate_components(["Generator","Link","Line","Store","StorageUnit","Load"]):
@@ -193,6 +237,7 @@ def strip_network(n, zone, area, snakemake):
             location_boolean = c.df.bus.isin(nodes_to_keep)
         to_keep = c.df.index[location_boolean & c.df.carrier.isin(carrier_to_keep)]
         to_drop = c.df.index.symmetric_difference(to_keep)
+        print(c.name, to_drop)
         n.mremove(c.name, to_drop)
 
 
@@ -204,43 +249,58 @@ def shutdown_lineexp(n):
     n.links.loc[n.links.carrier=='DC', 'p_nom_extendable'] = False
 
 
-def limit_resexp(n, year, snakemake):
+def limit_resexp(n, year):
     '''
     limit expansion of renewable technologies per zone and carrier type
     as a ratio of max increase to 2021 capacity fleet
     (additional to zonal place availability constraint)
     '''
+    name = snakemake.config['ci']['name']
     ratio = snakemake.config['global'][f'limit_res_exp_{year}']
+    node = geoscope(zone, area)['node']
 
-    fleet = n.generators.groupby([n.generators.bus.str[:2],
-                                  n.generators.carrier]).p_nom.sum()
-    fleet = fleet.rename(lambda x: x.split("-")[0], level=1).groupby(level=[0,1]).sum()
-    ct_national_target = list(snakemake.config[f"res_target_{year}"].keys()) + ["EU"]
+    res = n.generators[(~n.generators.index.str.contains('EU'))
+                       & (~n.generators.index.str.contains(name))
+                       & (~n.generators.index.str.contains(f'{node}'))]
+    fleet = res[res.p_nom_extendable==False]
 
-    fleet.drop(ct_national_target, errors="ignore", level=0, inplace=True)
+    #fleet.groupby([fleet.carrier, fleet.bus]).p_nom.sum()
+    off_c = fleet[fleet.index.str.contains('offwind')].carrier + '-' + \
+            fleet[fleet.index.str.contains('offwind')].index.str.extract('(ac)|(dc)').fillna('').sum(axis=1).values
 
-    # allow build out of carriers which are not build yet
-    fleet[fleet==0] = 1
-    for ct, carrier in fleet.index:
-        gen_i = ((n.generators.p_nom_extendable) & (n.generators.bus.str[:2]==ct)
-                 & (n.generators.carrier.str.contains(carrier)))
-        n.generators.loc[gen_i, "p_nom_max"] = ratio * fleet.loc[ct, carrier]
+    fleet["carrier_s"] = off_c.reindex(fleet.index).fillna(fleet.carrier)
 
-
-def phase_outs(n, snakemake):
-    """Set planned phase outs of conventional powerplants.
-    """
-    phase_outs = snakemake.config["phase_out"]
-    year = snakemake.wildcards.year
-    for carrier in phase_outs.keys():
-        countries = phase_outs[carrier][int(year)]
-        carrier_list = [carrier]
-        if carrier=="coal": carrier_list += ["lignite"]
-        links_i = n.links.index.str[:2].isin(countries) & n.links.carrier.isin(carrier_list)
-        n.links.loc[links_i, "p_nom"] = 0
+    for bus in fleet.bus.unique():
+        if not bus[:2] in snakemake.config[f"res_target_{year}"].keys():
+            for carrier in ['solar', 'onwind', 'offwind-ac', 'offwind-dc']:
+                p_nom_fleet = fleet.loc[(fleet.bus == bus)
+                                        & (fleet.carrier_s == carrier), "p_nom"].sum()
+                #print(f'bus: {bus}, carrier: {carrier}' ,p_nom_fleet)
+                n.generators.loc[(n.generators.p_nom_extendable==True) & (n.generators.bus == bus) & \
+                                 (n.generators.carrier == carrier), "p_nom_max"] = ratio * p_nom_fleet
 
 
-def reduce_biomass_potential(n):
+def nuclear_policy(n):
+    '''
+    remove nuclear PPs fleet for countries with nuclear ban policy
+    '''
+    for node in snakemake.config['nodes_with_nucsban']:
+            n.links.loc[n.links['bus1'].str.contains(f'{node}') & (n.links.index.str.contains('nuclear')), 'p_nom'] = 0
+
+
+def coal_policy(n):
+    '''
+    remove coal PPs fleet for countries with coal phase-out policy for {year}
+    '''
+
+    countries = timescope(zone, year)['coal_phaseout']
+
+    for country in countries:
+        n.links.loc[n.links['bus1'].str.contains(f'{country}') & (n.links.index.str.contains('coal')), 'p_nom'] = 0
+        n.links.loc[n.links['bus1'].str.contains(f'{country}') & (n.links.index.str.contains('lignite')), 'p_nom'] = 0
+
+
+def biomass_potential(n):
     '''
     remove solid biomass demand for industrial processes from overall biomass potential
     '''
@@ -248,559 +308,362 @@ def reduce_biomass_potential(n):
     n.stores.loc[n.stores.index=='EU solid biomass', 'e_initial'] *= 0.45
 
 
-def set_co2_policy(n, snakemake, costs):
-    """Set CO2 policy to a cap or CO2 price.
-    """
+def add_ci(n, policy, participation, year):
+    """Add C&I at its own node"""
+
+    #first deal with global policy environment
     gl_policy = snakemake.config['global']
-    year = snakemake.wildcards.year
 
     if gl_policy['policy_type'] == "co2 cap":
         co2_cap = gl_policy['co2_share']*gl_policy['co2_baseline']
-        logger.info(f"Setting global CO2 cap to {co2_cap}")
+        print(f"Setting global CO2 cap to {co2_cap}")
         n.global_constraints.at["CO2Limit","constant"] = co2_cap
 
     elif gl_policy['policy_type'] == "co2 price":
         n.global_constraints.drop("CO2Limit", inplace=True)
         co2_price = gl_policy[f'co2_price_{year}']
-        logger.info(f"Setting CO2 price to {co2_price}")
+        print(f"Setting CO2 price to {co2_price}")
         for carrier in ["coal", "oil", "gas", "lignite"]:
             n.generators.at[f"EU {carrier}","marginal_cost"] += co2_price*costs.at[carrier, 'CO2 intensity']
 
 
-def freeze_capacities(n):
-
-    for name, attr in [("generators","p"),("links","p"),("stores","e")]:
-        df = getattr(n,name)
-        df[attr + "_nom_extendable"] = False
-        df[attr + "_nom"] = df[attr + "_nom_opt"]
-        
-    # allow larger fossil fuel usage
-    gen_i = n.generators[n.generators.index.str.contains("EU")].index
-    n.generators.loc[gen_i, "p_nom_extendable"] = True
-
-    #allow more emissions
-    n.stores.at["co2 atmosphere","e_nom"] *=2
+    #local C&I properties
+    name = snakemake.config['ci']['name']
+    #load = snakemake.config['ci']['load']
+    ci_load = snakemake.config['ci_load'][f'{zone}']
+    load = ci_load * float(participation)/100  #C&I baseload MW
+    node = geoscope(zone, area)['node']
 
 
-def add_battery_constraints(n):
-    """
-    Add constraint ensuring that charger = discharger, i.e.
-    1 * charger_size - efficiency * discharger_size = 0
-    """
-    if not n.links.p_nom_extendable.any():
-        return
+    if policy == "ref":
+        return None
 
-    discharger_bool = n.links.index.str.contains("battery discharger")
-    charger_bool = n.links.index.str.contains("battery charger")
+    #tech_palette options
+    clean_techs, storage_techs, storage_chargers, storage_dischargers = palette(tech_palette)
 
-    dischargers_ext = n.links[discharger_bool].query("p_nom_extendable").index
-    chargers_ext = n.links[charger_bool].query("p_nom_extendable").index
+    n.add("Bus",
+          name)
 
-    eff = n.links.efficiency[dischargers_ext].values
-    lhs = (
-        n.model["Link-p_nom"].loc[chargers_ext]
-        - n.model["Link-p_nom"].loc[dischargers_ext] * eff
-    )
+    n.add("Bus",
+          f"{name} H2",
+          carrier="H2"
+          )
 
-    n.model.add_constraints(lhs == 0, name="Link-charger_ratio")
-    
+    n.add("Link",
+          f"{name} H2 Electrolysis",
+          bus0=name,
+          bus1=f"{name} H2",
+          carrier="H2 Electrolysis",
+          efficiency=n.links.at[f"{node} H2 Electrolysis"+"-{}".format(year), "efficiency"],
+          capital_cost=n.links.at[f"{node} H2 Electrolysis"+"-{}".format(year), "capital_cost"],
+          p_nom_extendable=True,
+          lifetime=n.links.at[f"{node} H2 Electrolysis"+"-{}".format(year), "lifetime"]
+          )
 
+    n.add("Load",
+          f"{name} H2",
+          carrier=f"{name} H2",
+          bus=f"{name} H2",
+          p_set=pd.Series(load,index=n.snapshots))
 
-def DE_targets(n, snakemake):
-    
-    capacities_2025 = {
-        "coal": 8e3,   # p.11 [1]
-        "lignite": 14e3, # p.11 [1]
-        "gas": 37e3,  # p.11 [1]
-        "solar":  108e3,    # p.22 [1]
-        "onwind": 77e3,  # p.22 [1]
-        "offwind-dc": 12e3,  # p.22 [1]
-        }
+    #cost-less storage to indivcate flexible demand
+    n.add("Store",
+          f"{name} H2 Store",
+          bus=f"{name} H2",
+          e_cyclic=True,
+          e_nom_extendable=True,
+          carrier="H2 Store",
+          capital_cost=0.001,#costs.at["hydrogen storage underground","fixed"],
+          lifetime=costs.at["hydrogen storage underground","lifetime"],
+          )
 
-    capacities_2030 = {
-        "coal": 0,   # p.11 [1]
-        "lignite": 0, # p.11 [1]
-        "gas": 46e3,  # p.11 [1]
-        "solar":  215e3,    # p.22 [1]
-        "onwind": 115e3,  # p.22 [1]
-        "offwind-dc": 30e3 ,  # p.22 [1]
-        }
+    if policy in ["res","cfe","exl","grf"]:
+        n.add("Link",
+              name + " export",
+              bus0=name,
+              bus1=node,
+              marginal_cost=0.1, #large enough to avoid optimization artifacts, small enough not to influence PPA portfolio
+              p_nom=1e6)
 
-    ci_name = snakemake.config['ci']["name"]
-    zone = snakemake.wildcards.zone
-    year = snakemake.wildcards.year
-    country_targets = snakemake.config[f"res_target_{year}"]
+    if policy in ["grd","res","grf"]:
+        n.add("Link",
+              name + " import",
+              bus0=node,
+              bus1=name,
+              marginal_cost=0.001, #large enough to avoid optimization artifacts, small enough not to influence PPA portfolio
+              p_nom=1e6)
 
-    weights = n.snapshot_weightings["generators"]
-    
-    ct = "DE"
-    
-    grid_buses = n.buses.index[(n.buses.index.str[:2]==ct) |
-                               (n.buses.index == f"{ci_name}")]
-    # from Agora report [1] https://static.agora-energiewende.de/fileadmin/Projekte/2021/2021_11_DE_KNStrom2035/A-EW_264_KNStrom2035_WEB.pdf
-    # p.10
-    current_load = (n.loads_t.p_set.mul(n.snapshot_weightings.generators, axis=0)["DE1 0"].sum())/1e6
-    load_scale = {"2025":590/current_load,
-                  "2030":(726-37)/current_load}
-    print("Increasing electricity demand by factor ", round(load_scale[year], ndigits=2))
-    n.loads_t.p_set["DE1 0"] *= load_scale[year]
-    
-    existing_wind = n.generators[(n.generators.index.str[:2]=="DE")&(n.generators.carrier=="offwind")].p_nom.sum()
-    
-    
-    capacities = capacities_2025 if year=="2025" else capacities_2030
-    
-    capacities["offwind-dc"] -= existing_wind
-    
-    # conventional
-    for carrier in ["lignite", "coal"]:
-        links_i = n.links[(n.links.carrier==carrier)&(n.links.index.str[:2]=="DE")].index
-        scale_factor = capacities[carrier] / n.links.p_nom.mul(n.links.efficiency).loc[links_i].sum()
-        scale_factor = 0 if np.isnan(scale_factor) else scale_factor
-        n.links.loc[links_i, "p_nom"] *= scale_factor
-        n.links.loc[links_i, "p_nom_extendable"] = False 
-        print(f"Scaling capacity of {carrier} by {scale_factor}")
-     
-    # renewable
-    c = "Generator"
-    for carrier in ["offwind-dc"]:
-        gens_i = n.df(c)[(n.df(c).carrier==carrier)&(n.df(c).index.str[:2]=="DE")].index
-        if carrier=="offwind-dc":
-            n.df(c).loc[gens_i, "p_nom"] = capacities[carrier] 
-            n.generators.loc[f"DE1 0 offwind-ac-{year}", "p_nom_extendable"] = False
-        else:
-            scale_factor = capacities[carrier] / n.df(c).p_nom.loc[gens_i].sum()
-            n.df(c).loc[gens_i, "p_nom"] *= scale_factor
-            print(f"Scaling capacity of {carrier} by {scale_factor}")
-        n.df(c).loc[gens_i, "p_nom_extendable"] = False
-
-    
-    print("Remove RES target and fix generation capacity for DE")
-    # snakemake.config[f"res_target_{year}"].pop("DE")
-    
-    return n
-        
-        
-def capacity_target_constraint(n, snakemake):
-    
-    capacities_2025 = {
-        "coal": 8e3,   # p.11 [1]
-        "lignite": 14e3, # p.11 [1]
-        "gas": 37e3,  # p.11 [1]
-        "solar":  108e3,    # p.22 [1]
-        "onwind": 77e3,  # p.22 [1]
-        "offwind-dc": 12e3,  # p.22 [1]
-        }
-
-    capacities_2030 = {
-        "coal": 0,   # p.11 [1]
-        "lignite": 0, # p.11 [1]
-        "gas": 46e3,  # p.11 [1]
-        "solar":  215e3,    # p.22 [1]
-        "onwind": 115e3,  # p.22 [1]
-        "offwind-dc": 30e3 ,  # p.22 [1]
-        }
-    
-    year = snakemake.wildcards.year
-    capacities = capacities_2025 if year=="2025" else capacities_2030
-    
-    def cap_constraint(c, carrier_list, carrier):
-        ext_i = n.df(c)[(n.df(c).carrier.isin(carrier_list))
-                          &((n.df(c).index.str[:2]=="DE") | (n.df(c).index.str[:2]=="CI"))
-                          &(n.df(c).p_nom_extendable)].index
-        fix_i = n.df(c)[(n.df(c).carrier.isin(carrier_list))
-                          &(n.df(c).index.str[:2]=="DE")
-                          &(~n.df(c).p_nom_extendable)].index
-
-        lhs = n.model[f"{c}-p_nom"].loc[ext_i].sum()
-        rhs = capacities[carrier] - n.df(c).loc[fix_i, "p_nom"].sum()
-        if rhs<0 or ext_i.empty:
-            scale_factor = capacities[carrier] / n.df(c).loc[ext_i.union(fix_i)].p_nom.sum()
-            if scale_factor == np.inf:
-                n.df(c).loc[ext_i.union(fix_i), "p_nom"] = capacities[carrier] 
-            else:
-                n.df(c).loc[ext_i.union(fix_i), "p_nom"] *= scale_factor
-            n.df(c).loc[ext_i.union(fix_i), "p_nom_extendable"] = False
-            print(f"scaling {carrier} by scale factor {scale_factor}.")
-        else:
-            print(f"Add capacity constraint of {carrier} with {rhs} MW.")
-            n.model.add_constraints(lhs == rhs, name=f"GlobalConstraint-capacity_target_DE_{carrier}")
-    
-    # gas constraint
-    gas_carrier = ["OCGT", "CCGT"]
-    # cap_constraint("Link", gas_carrier, "gas")
-    
-    # PV
-    cap_constraint("Generator", ["solar"], "solar")
-    
-    # onwind
-    # cap_constraint("Generator", ["onwind"], "onwind")
-    
-    
-        
-    
-def country_res_constraints(n, snakemake):
-
-    ci_name = snakemake.config['ci']["name"]
-    zone = snakemake.wildcards.zone
-    year = snakemake.wildcards.year
-    country_targets = snakemake.config[f"res_target_{year}"]
-
-    weights = n.snapshot_weightings["generators"]
-    grid_res_techs = snakemake.config['global']['grid_res_techs']
+    if policy == "grd":
+        return None
 
 
-    for ct in country_targets.keys():
+    #baseload clean energy generator
+    if "green hydrogen OCGT" in clean_techs:
+        n.add("Generator",
+              name + " green hydrogen OCGT",
+              carrier="green hydrogen OCGT",
+              bus=name,
+              p_nom_extendable = True,
+              capital_cost=costs.at['OCGT', 'fixed'],
+              marginal_cost=costs.at['OCGT', 'VOM']  + snakemake.config['costs']['price_green_hydrogen']/0.033/costs.at['OCGT', 'efficiency']) #hydrogen cost in EUR/kg, 0.033 MWhLHV/kg
 
-        if ct == zone:
-            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct) |
-                                       (n.buses.index == f"{ci_name}")]
-        else:
-            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
+    #baseload clean energy generator
+    if "adv_nuclear" in clean_techs:
+        n.add("Generator",
+              f"{name} adv_nuclear",
+              bus = name,
+              carrier = 'nuclear',
+              capital_cost = costs.loc['adv_nuclear']['fixed'],
+              marginal_cost= costs.loc['adv_nuclear']['VOM']  + costs.loc['adv_nuclear']['fuel']/costs.loc['adv_nuclear']['efficiency'],
+              p_nom_extendable = True,
+              lifetime = costs.loc['adv_nuclear']['lifetime']
+              )
 
-        if grid_buses.empty: continue
+    #baseload clean energy generator
+    if "allam_ccs" in clean_techs:
+        n.add("Generator",
+              f"{name} allam_ccs",
+              bus = name,
+              carrier = 'gas',
+              capital_cost = costs.loc['allam_ccs']['fixed'] + costs.loc['allam_ccs']['FOM-abs'],
+              marginal_cost = costs.loc['allam_ccs']['VOM'] + \
+                              costs.loc['allam_ccs']['fuel']/costs.loc['allam_ccs']['efficiency'] + \
+                              costs.loc['allam_ccs']['co2_seq']*costs.at['gas', 'CO2 intensity']/costs.loc['allam_ccs']['efficiency'],
+              p_nom_extendable = True,
+              lifetime = costs.loc['allam_ccs']['lifetime'],
+              efficiency = costs.loc['allam_ccs']['efficiency'],
+              )
 
-        grid_loads = n.loads.index[n.loads.bus.isin(grid_buses)]
+    #baseload clean energy generator
+    if "adv_geothermal" in clean_techs:
+        n.add("Generator",
+              f"{name} adv_geothermal",
+              bus = name,
+              #carrier = '',
+              capital_cost = costs.loc['adv_geothermal']['fixed'],
+              marginal_cost= costs.loc['adv_geothermal']['VOM'],
+              p_nom_extendable = True,
+              lifetime = costs.loc['adv_geothermal']['lifetime']
+              )
 
-        country_res_gens = n.generators.index[n.generators.bus.isin(grid_buses)
-                                              & n.generators.carrier.isin(grid_res_techs)]
-        country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
-                                          & n.links.carrier.isin(grid_res_techs)]
-        country_res_storage_units = n.storage_units.index[n.storage_units.bus.isin(grid_buses)
-                                                          & n.storage_units.carrier.isin(grid_res_techs)]
-
-
-
-        eff_links = n.links.loc[country_res_links, "efficiency"]
-
-
-        gens =  n.model['Generator-p'].loc[:,country_res_gens] * weights
-        links = n.model['Link-p'].loc[:,country_res_links] * eff_links * weights
-        sus = n.model['StorageUnit-p_dispatch'].loc[:,country_res_storage_units] * weights
-
-        lhs = gens.sum() + sus.sum() + links.sum()
-
-        target = timescope(ct, year, snakemake)["country_res_target"]
-
-        if  (snakemake.wildcards.res_share!="p0") and (ct == zone):
-            target = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
-
-
-        total_load = (n.loads_t.p_set[grid_loads].sum(axis=1)*weights).sum() # number
-
-        # add for ct in zone electrolysis demand to load if not "reference" scenario
-        # if (ct==zone) and (f"{ci_name}" in n.buses.index):
-
-        #     logger.info("Consider electrolysis demand for RES target.")
-        #     # H2 demand in zone
-        #     offtake_volume = float(snakemake.wildcards.offtake_volume)
-        #     # efficiency of electrolysis
-        #     efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
-
-        #     # electricity demand of electrolysis
-        #     demand_electrolysis = (offtake_volume/efficiency
-        #                             *n.snapshot_weightings.generators).sum()
-        #     total_load += demand_electrolysis
-
-        print(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6, ndigits=2)} TWh")
-        logger.info(f"country RES constraints for {ct} {target} and total load {round(total_load/1e6)} TWh")
-
-        n.model.add_constraints(lhs == target*total_load, name=f"GlobalConstraint-country_res_constraints_{ct}")
-        
-
-def biomass_generation_constraint(n, snakemake):
-    
-    year = snakemake.wildcards.year
-    country_targets = snakemake.config[f"res_target_{year}"]
-
-    weights = n.snapshot_weightings["generators"]
-    biomass = ["urban central solid biomass CHP"]
-    
-    links_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
-    
-    if links_i.empty: return
-    
-    biomass_gen = n.model['Link-p'].loc[:,links_i] * weights
-    
-    rhs = n.links.loc[links_i, "p_nom"]*0.67*weights.sum()
-    
-    lhs = biomass_gen.sum(dims="snapshot")
-    
-    
-    n.model.add_constraints(lhs == rhs, name="GlobalConstraint-biomass_generation")
+    #RES generator
+    for carrier in ["onwind","solar"]:
+        if carrier not in clean_techs:
+            continue
+        gen_template = node+" "+carrier+"-{}".format(year)
+        n.add("Generator",
+              f"{name} {carrier}",
+              carrier=carrier,
+              bus=name,
+              p_nom_extendable=True,
+              p_max_pu=n.generators_t.p_max_pu[gen_template],
+              capital_cost=n.generators.at[gen_template,"capital_cost"],
+              marginal_cost=n.generators.at[gen_template,"marginal_cost"])
 
 
-    # for ct in country_targets.keys():
-        
-    #     grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
+    if "battery" in storage_techs:
+        n.add("Bus",
+              f"{name} battery",
+              carrier="battery"
+              )
 
-    #     if grid_buses.empty: continue
+        n.add("Store",
+              f"{name} battery",
+              bus=f"{name} battery",
+              e_cyclic=True,
+              e_nom_extendable=True,
+              carrier="battery",
+              capital_cost=n.stores.at[f"{node} battery"+"-{}".format(year), "capital_cost"],
+              lifetime=n.stores.at[f"{node} battery"+"-{}".format(year), "lifetime"]
+              )
 
-        
-    #     # breakpoint()
-    #     country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
-    #                                       & n.links.carrier.isin(biomass)]
-    #     if country_res_links.empty: continue
-    #     links = n.model['Link-p'].loc[:,country_res_links] * weights
-    #     # generation assuming average capacity factors of 0.67
-    #     rhs = n.links.loc[country_res_links, "p_nom"]*0.67*weights.sum()
-        
-    #     lhs = links.sum(dims="snapshot")
-        
-        
-    #     n.model.add_constraints(lhs == rhs, name=f"GlobalConstraint-country_biomass_{ct}")
+        n.add("Link",
+              f"{name} battery charger",
+              bus0=name,
+              bus1=f"{name} battery",
+              carrier="battery charger",
+              efficiency=n.links.at[f"{node} battery charger"+"-{}".format(year), "efficiency"],
+              capital_cost=n.links.at[f"{node} battery charger"+"-{}".format(year), "capital_cost"],
+              p_nom_extendable=True,
+              lifetime=n.links.at[f"{node} battery charger"+"-{}".format(year), "lifetime"]
+              )
 
-
-def add_unit_committment(n):
-    """
-    Add unit commitment for conventionals
-    based on
-    https://discord.com/channels/914472852571426846/1042037164088766494/1042395972438868030
-    from DIW
-    [1] https://www.diw.de/documents/publikationen/73/diw_01.c.424566.de/diw_datadoc_2013-068.pdf
-    
-    [2] update with p.48 https://www.agora-energiewende.de/fileadmin/Projekte/2017/Flexibility_in_thermal_plants/115_flexibility-report-WEB.pdf
-    
-    [3] SI Schill et al. p.26 https://static-content.springer.com/esm/art%3A10.1038%2Fnenergy.2017.50/MediaObjects/41560_2017_BFnenergy201750_MOESM196_ESM.pdf
-    [4] MA https://zenodo.org/record/6421682
-    """
-    logger.info("add unit commitment")
-    # OCGT
-    links_i = n.links[n.links.carrier.isin(["OCGT"])].index
-    # n.links.loc[links_i, "p_min_pu"] = 0.2  # [3]   # removed since otherwise NL is not solving
-    n.links.loc[links_i, "start_up_cost"] = 24 * 0.4 # [3] start-up depreciation costs Eur/MW
-    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 8-12% per min
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.2  # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.2  # [4] p.41
-    # cold/warm start up time within minutes, complete ramp up within one hour
-    
-    # CCGT
-    links_i = n.links[n.links.carrier.isin(["CCGT"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.45  # [2] mean of Minimum load Most commonly used power plants
-    n.links.loc[links_i, "start_up_cost"] = 144 * 0.57 # [3] start-up depreciation costs Eur/MW, in [4] 144
-    n.links.loc[links_i, "min_up_time"] = 3  # mean of "Cold start-up time" [2] Most commonly used power plants
-    n.links.loc[links_i, "min_down_time"] = 2   # [3] Minimum offtime [hours]
-    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 2-4% per min
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.45  # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.45 # [4] p.41
- 
-    # coal
-    links_i = n.links[n.links.carrier.isin(["coal"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.325  # [2] mean of Minimum load Most commonly used power plants
-    n.links.loc[links_i, "start_up_cost"] =  108 * 0.33 # [4] p.41
-    n.links.loc[links_i, "min_up_time"] = 5  # mean of "Cold start-up time" [2] Most commonly used power plants
-    n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
-    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1.5-4% per minute
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.38 # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.38 # [4] p.41
-    
-    # lignite
-    links_i = n.links[n.links.carrier.isin(["lignite"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.325 # 0.4  # [3]
-    n.links.loc[links_i, "start_up_cost"] = 58 * 0.33 # [4] p.41
-    n.links.loc[links_i, "min_up_time"] = 7  # mean of "Cold start-up time" [2] Most commonly used power plants
-    n.links.loc[links_i, "min_down_time"] = 6   # [3] Minimum offtime [hours], large plant
-    n.links.loc[links_i, "ramp_limit_up"] = 1  # [2] 1-2% per minute
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.4 # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.4 # [4] p.41
-    
-    # nuclear
-    links_i = n.links[n.links.carrier.isin(["nuclear"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.5 # [3]
-    n.links.loc[links_i, "start_up_cost"] = 50 * 0.33 # [3]    start-up depreciation costs Eur/MW
-    n.links.loc[links_i, "min_up_time"] = 6   # [1]
-    n.links.loc[links_i, "ramp_limit_up"] = 0.3  # [4]
-    n.links.loc[links_i, "min_down_time"] = 10  # [3] Minimum offtime [hours]
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.5  # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.5 # [4] p.41
-    
-    # oil
-    links_i = n.links[n.links.carrier.isin(["oil"])].index
-    n.links.loc[links_i, "p_min_pu"] = 0.2 # [4]
-    n.links.loc[links_i, "start_up_cost"] = 1 * 0.35 # [4]    start-up depreciation costs Eur/MW
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.2  # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.2 # [4] p.41
-
-    # biomass
-    links_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
-    n.links.loc[links_i, "p_min_pu"] = 0.38 # [4]
-    n.links.loc[links_i, "start_up_cost"] = 78 * 0.27 # [4]
-    n.links.loc[links_i, "min_up_time"] = 2   # [4]
-    n.links.loc[links_i, "min_down_time"] = 2  # [4]
-    n.links.loc[links_i, "ramp_limit_start_up"] = 0.38  # [4] p.41
-    n.links.loc[links_i, "ramp_limit_shut_down"] = 0.38 # [4] p.41
-    
-    
-    links_i = n.links[n.links.carrier.isin(["OCGT", "CCGT", "nuclear", "coal", "lignite", "oil","urban central solid biomass CHP"])].index
-    n.links.loc[links_i, "committable"] = True
+        n.add("Link",
+              f"{name} battery discharger",
+              bus0=f"{name} battery",
+              bus1=name,
+              carrier="battery discharger",
+              efficiency=n.links.at[f"{node} battery discharger"+"-{}".format(year), "efficiency"],
+              marginal_cost=n.links.at[f"{node} battery discharger"+"-{}".format(year), "marginal_cost"],
+              p_nom_extendable=True,
+              lifetime=n.links.at[f"{node} battery discharger"+"-{}".format(year), "lifetime"]
+              )
 
 
-def average_every_nhours(n, offset):
-    
-    if "H" in offset:
-        m = n.copy(with_time=False)
-        logger.info(f"Resampling the network to {offset}")
-    
-        snapshot_weightings = n.snapshot_weightings.resample(offset).sum()
-        m.set_snapshots(snapshot_weightings.index)
-        m.snapshot_weightings = snapshot_weightings
-    
-        for c in n.iterate_components():
-            pnl = getattr(m, c.list_name + "_t")
-            for k, df in c.pnl.items():
-                if not df.empty:
-                    pnl[k] = df.resample(offset).mean()
-        return m
-    if "sn" in offset:
-        sn = int(offset.replace("sn", ""))
-        logger.info(f"Aggregate temporally to every {sn} snapshot")
-        n.set_snapshots(n.snapshots[::sn])
-        weights = pd.DataFrame(sn, index=n.snapshot_weightings.index,
-                               columns=n.snapshot_weightings.columns)
-        n.snapshot_weightings = weights
+def solve_network(n, policy, penetration, tech_palette):
 
-        return n
-
-def prepare_network(n):
-    solver_options = snakemake.config['solving']['solver']
-    np.random.seed(solver_options.get("seed", 123))
-    
-    for df in (
-            n.generators_t.p_max_pu,
-            n.generators_t.p_min_pu,  
-            n.storage_units_t.inflow,
-        ):
-            df.where(df > 1e-2, other=0.0, inplace=True)
-    
-    for t in n.iterate_components():
-           if "marginal_cost" in t.df:
-               t.df["marginal_cost"] += 1e-2 + 2e-3 * (
-                   np.random.random(len(t.df)) - 0.5
-               )
-    return n
-
-
-def solve_network(n, tech_palette):
+    ci = snakemake.config['ci']
+    name = ci['name']
 
     clean_techs, storage_techs, storage_chargers, storage_dischargers = palette(tech_palette)
+
+    def res_constraints(n):
+
+        res_gens = [name + " " + g for g in ci['res_techs']]
+
+        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                                  index = n.snapshots,
+                                  columns = res_gens)
+        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+
+        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+        load = join_exprs(linexpr((-n.snapshot_weightings["generators"],electrolysis)))
+
+        lhs = res + "\n" + load
+
+        con = define_constraints(n, lhs, '=', 0., 'RESconstraints','REStarget')
+
+
+    def excess_constraints(n):
+
+        res_gens = [name + " " + g for g in ci['res_techs']]
+
+        weightings = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(res_gens)),
+                                  index = n.snapshots,
+                                  columns = res_gens)
+        res = join_exprs(linexpr((weightings,get_var(n, "Generator", "p")[res_gens]))) # single line sum
+
+        electrolysis = get_var(n, "Link", "p")[f"{name} H2 Electrolysis"]
+
+        allowed_excess = 1.2
+
+        load = join_exprs(linexpr((-allowed_excess*n.snapshot_weightings["generators"],electrolysis)))
+
+        lhs = res + "\n" + load
+
+        con = define_constraints(n, lhs, '<=', 0., 'RESconstraints','REStarget')
+
+
+    def country_res_constraints(n):
+
+        country_targets = snakemake.config[f"res_target_{year}"]
+
+        for ct in country_targets.keys():
+
+            grid_buses = n.buses.index[(n.buses.index.str[:2]==ct)]
+
+            if grid_buses.empty: continue
+
+            grid_res_techs = snakemake.config['global']['grid_res_techs']
+
+            grid_loads = n.loads.index[n.loads.bus.isin(grid_buses)]
+
+            country_res_gens = n.generators.index[n.generators.bus.isin(grid_buses)
+                                                  & n.generators.carrier.isin(grid_res_techs)]
+            country_res_links = n.links.index[n.links.bus1.isin(grid_buses)
+                                              & n.links.carrier.isin(grid_res_techs)]
+            country_res_storage_units = n.storage_units.index[n.storage_units.bus.isin(grid_buses)
+                                                              & n.storage_units.carrier.isin(grid_res_techs)]
+
+
+            weigt_gens = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_gens)),
+                                      index = n.snapshots,
+                                      columns = country_res_gens)
+            weigt_links = pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_links)),
+                                      index = n.snapshots,
+                                      columns = country_res_links)
+            weigt_sus= pd.DataFrame(np.outer(n.snapshot_weightings["generators"],[1.]*len(country_res_storage_units)),
+                                      index = n.snapshots,
+                                      columns = country_res_storage_units)
+
+            gens = linexpr((weigt_gens, get_var(n, "Generator", "p")[country_res_gens]))
+            links = linexpr((weigt_links*n.links.loc[country_res_links, "efficiency"].values, get_var(n, "Link", "p")[country_res_links]))
+            sus = linexpr((weigt_sus, get_var(n, "StorageUnit", "p_dispatch")[country_res_storage_units]))
+            lhs_temp = pd.concat([gens, links, sus], axis=1)
+
+            lhs = join_exprs(lhs_temp)
+
+            target = timescope(ct, year)["country_res_target"]
+            if ct == zone and snakemake.wildcards.res_share!="p0":
+                target = res_share
+            total_load = (n.loads_t.p_set[grid_loads].sum(axis=1)*n.snapshot_weightings["generators"]).sum() # number
+
+            print(f"country RES constraints for {ct} {target} and total load {total_load}")
+
+            con = define_constraints(n, lhs, '=', target*total_load, f'countryRESconstraints_{ct}',f'countryREStarget_{ct}')
+
+
+    def add_battery_constraints(n):
+
+        chargers_b = n.links.carrier.str.contains("battery charger")
+        chargers = n.links.index[chargers_b & n.links.p_nom_extendable]
+        dischargers = chargers.str.replace("charger", "discharger")
+
+        if chargers.empty or ('Link', 'p_nom') not in n.variables.index:
+            return
+
+        link_p_nom = get_var(n, "Link", "p_nom")
+
+        lhs = linexpr((1,link_p_nom[chargers]),
+                      (-n.links.loc[dischargers, "efficiency"].values,
+                       link_p_nom[dischargers].values))
+
+        define_constraints(n, lhs, "=", 0, 'Link', 'charger_ratio')
+
 
     def extra_functionality(n, snapshots):
 
         add_battery_constraints(n)
-        country_res_constraints(n, snakemake)
-        biomass_generation_constraint(n, snakemake)
-        if snakemake.config["scenario"]["DE_target"]:
-            capacity_target_constraint(n, snakemake)
-    
-    def extra_functionality_after(n, snapshots):
+        country_res_constraints(n)
 
-        add_battery_constraints(n)
-        # country_res_constraints(n, snakemake)
-
-
+        if policy == "res":
+            print("setting annual RES target")
+            res_constraints(n)
+        elif policy == "exl":
+            print("setting excess limit on hourly matching")
+            excess_constraints(n)
     if snakemake.config["global"]["must_run"]:
         coal_i = n.links[n.links.carrier.isin(["lignite","coal"])].index
         n.links.loc[coal_i, "p_min_pu"] = 0.9
-    if snakemake.config["scenario"]["DE_target"]:
-        n = DE_targets(n, snakemake)
-        
     n.consistency_check()
 
-    if snakemake.config["global"]["uc"]:
-        logger.info("Adding unit commitment.")
-        add_unit_committment(n)
-
-    linearized_uc = snakemake.config["global"]["linear_uc"]
-    
-    if linearized_uc:
-        logger.info("Adding linearised unit commitment.")
-
-
-
+    # drop snapshots because of load shedding
+    to_drop = pd.Timestamp('2013-01-16 15:00:00')
+    new_snapshots = n.snapshots.drop(pd.Timestamp('2013-01-16 15:00:00'))
+    n.set_snapshots(new_snapshots)
+    final_sn = n.snapshots[n.snapshots<to_drop][-1]
+    n.snapshot_weightings.loc[final_sn] *= 2
 
     formulation = snakemake.config['solving']['options']['formulation']
     solver_options = snakemake.config['solving']['solver']
     solver_name = solver_options['name']
-    solver_options["crossover"] = 0
-    
-    # testing
-    nhours = snakemake.config["scenario"]["temporal_resolution"]
-    n = average_every_nhours(n, nhours)
-    
-    n = prepare_network(n)
-    
-    # n.export_to_netcdf(snakemake.output.prenetwork)
 
-    n.optimize(
+
+    n.lopf(pyomo=False,
            extra_functionality=extra_functionality,
            formulation=formulation,
            solver_name=solver_name,
            solver_options=solver_options,
-           log_fn=snakemake.log.solver,
-           linearized_unit_commitment=linearized_uc
-           )
+           solver_logfile=snakemake.log.solver)
+
+    def freeze_capacities(n):
+
+        for name, attr in [("generators","p"),("links","p"),("stores","e")]:
+            df = getattr(n,name)
+            df[attr + "_nom_extendable"] = False
+            df[attr + "_nom"] = df[attr + "_nom_opt"]
+
+        #allow more emissions
+        n.stores.at["co2 atmosphere","e_nom"] *=2
 
     freeze_capacities(n)
-    
-    if len(n.generators[n.generators.p_nom_extendable])>5:
-        import sys
-        sys.exit("freezing of capacity did not work as intended")
-        
-    n.export_to_netcdf(snakemake.output.prenetwork)
 
-    to_drop = (n.buses_t.marginal_price.loc[:,n.buses.carrier=="AC"].sum(axis=1)
-                .sort_values().iloc[-10:].index)
-    
-    to_drop = pd.DatetimeIndex([
-                        '2013-01-15 16:00:00',
-                        '2013-01-15 17:00:00',
-                        '2013-01-16 16:00:00',
-                        #'2013-01-16 17:00:00',
-                        '2013-01-24 06:00:00',
-                        #'2013-01-24 07:00:00',
-                        '2013-01-24 15:00:00',
-                        '2013-01-24 16:00:00',
-                        '2013-01-24 17:00:00',
-                        #'2013-01-24 18:00:00',
-                        '2013-01-24 19:00:00',
-                        '2013-11-28 16:00:00',
-                        #'2013-11-28 17:00:00'
-                        ])
-    
-    to_drop = n.snapshots[(n.buses_t.marginal_price.loc[:, n.buses.carrier=="AC"]>350).any(axis=1)]
-    
-    
-    to_drop = to_drop.intersection(n.snapshots)
-    
-
-    # drop snapshots because of load shedding
-    logger.info(f"Dropping {len(to_drop)} snapshots with marginal prices above 350 Eur/MWh.")
-
-    for sn in to_drop:
-        logger.info(f"dropping {sn}")
-        weight = n.snapshot_weightings.loc[sn]
-        new_snapshots = n.snapshots.drop(sn)
-        n.set_snapshots(new_snapshots)
-        final_sn = n.snapshots[n.snapshots<sn][-1]
-        n.snapshot_weightings.loc[final_sn] += weight
-    
-    return n
-
-    
-
-    
-    # if len(n.generators[n.generators.p_nom_extendable])>5:
-    #     import sys
-    #     sys.exit("freezing of capacity did not work as intended")
-
-
-    # n.optimize(
-    #         extra_functionality=extra_functionality_after,
-    #         formulation=formulation,
-    #         solver_name=solver_name,
-    #         solver_options=solver_options,
-    #         log_fn=snakemake.log.solver,
-    #         linearized_unit_commitment=linearized_uc)
+    n.lopf(pyomo=False,
+           formulation=formulation,
+           solver_name=solver_name,
+           solver_options=solver_options,
+           solver_logfile=snakemake.log.solver)
 
 #%%
 if __name__ == "__main__":
@@ -809,73 +672,64 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('solve_base_network',
                                 policy="ref", palette='p1', zone='DE', year='2025',
-                                res_share="p0",
-                                offtake_volume="3200")
+                                participation='10', res_share="p10")
 
     logging.basicConfig(filename=snakemake.log.python,
                     level=snakemake.config['logging_level'])
 
-    #Wildcards & Settings ----------------------------------------------------
+    #Wildcards & Settings
+    #to fix background "base" network, solve first without H2 DEMAND
+    policy = "ref" #snakemake.wildcards.policy[:3]
+    print(f"solving network for policy: {policy}")
+
+    penetration = 100.#snakemake.wildcards.policy[3:]
+    if penetration != "":
+        print(f"warning, penetration {penetration} not supported, only 100%")
+
     tech_palette = snakemake.wildcards.palette
-    logger.info(f"Technology palette: {tech_palette}")
+    print(f"solving network for palette: {tech_palette}")
 
     zone = snakemake.wildcards.zone
-    logger.info(f"Bidding zone: {zone}")
+    print(f"solving network for bidding zone: {zone}")
 
     year = snakemake.wildcards.year
-    logger.info(f"Year: {year}")
+    print(f"solving network year: {year}")
 
     area = snakemake.config['area']
-    logger.info(f"Geoscope: {area}")
+    print(f"solving with geoscope: {area}")
+
+    participation = snakemake.wildcards.participation
+    print(f"solving with participation: {participation}")
 
     res_share = float(snakemake.wildcards.res_share.replace("m","-").replace("p","."))
-    if  snakemake.wildcards.res_share=="p0":
-        res_share = timescope(zone, year, snakemake)["country_res_target"]
-    logger.info(f"RES share: {res_share}")
 
-    # import network -------------------------------------------------------
-    n = pypsa.Network(timescope(zone, year, snakemake)['network_file'],
+    # When running via snakemake
+    n = pypsa.Network(timescope(zone, year)['network_file'],
                       override_component_attrs=override_component_attrs())
 
     Nyears = 1 # years in simulation
-    costs = prepare_costs(timescope(zone, year, snakemake)['costs_projection'],
+    costs = prepare_costs(timescope(zone, year)['costs_projection'],
                           snakemake.config['costs']['USD2013_to_EUR2013'],
                           snakemake.config['costs']['discountrate'],
                           Nyears,
                           snakemake.config['costs']['lifetime'],
-                          year,
-                          snakemake)
-
-    # adjust biomass CHP2 bus 2
-    chp_i = n.links[n.links.carrier=="urban central solid biomass CHP"].index
-    n.links.loc[chp_i, "bus2"] = ""
-    remove_i = n.links[n.links.carrier.str.contains("biomass boiler")].index
-    n.mremove("Link", remove_i)
+                          year)
 
 
     with memory_logger(filename=getattr(snakemake.log, 'memory', None), interval=30.) as mem:
 
-        strip_network(n, zone, area, snakemake)
+        strip_network(n)
+
         shutdown_lineexp(n)
-        limit_resexp(n,year, snakemake)
-        phase_outs(n, snakemake)
-        reduce_biomass_potential(n)
-        cost_parametrization(n, snakemake)
-        set_co2_policy(n, snakemake, costs)
+        limit_resexp(n,year)
+        nuclear_policy(n)
+        coal_policy(n)
+        biomass_potential(n)
+        cost_parametrization(n)
 
-        # offtake_volume = float(snakemake.wildcards.offtake_volume)
-        # efficiency of electrolysis
-        # efficiency = n.links[n.links.carrier=="H2 Electrolysis"].efficiency.mean()
-        # if snakemake.config["scenario"]["h2_demand_added"]:
-        #     logger.info("Add electrolysis demand.")
-        #     load_elec = offtake_volume/efficiency
-        #     n.add("Load",
-        #           f"{geoscope(n,zone, area)['node']} electrolysis demand",
-        #           bus=geoscope(n,zone, area)['node'],
-        #           p_set=pd.Series(load_elec, index=n.snapshots),
-        #           carrier="electricity")
+        add_ci(n, policy, participation, year)
 
-        n = solve_network(n, tech_palette)
+        solve_network(n, policy, penetration, tech_palette)
 
         n.export_to_netcdf(snakemake.output.network)
 
