@@ -710,8 +710,10 @@ price_duration = calculate_price_duration(n,cols, price_duration)
 cf = cf.loc[:,((cf.columns.get_level_values(4).str.contains(f"{name} H2 Electrolysis"))|
             (cf.columns.get_level_values(4).str.contains(f"{name} H2 Store")))]
 
+average_cf = cf.mean().unstack().reindex(columns=n.links.index).dropna(axis=1).groupby(n.links.carrier, axis=1).mean()
 
 cf.to_csv(snakemake.output.csvs_cf)
+average_cf.to_csv(snakemake.output.csvs_cf.replace(".csv", "_average.csv"))
 supply_energy.to_csv(snakemake.output.csvs_supply_energy)
 nodal_supply_energy.to_csv(snakemake.output.csvs_nodal_supply_energy)
 nodal_capacities.to_csv(snakemake.output.csvs_nodal_capacities)
