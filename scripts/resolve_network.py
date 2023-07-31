@@ -221,8 +221,8 @@ def monthly_constraints(n, snakemake):
     electrolysis = (n.model['Link-p'].loc[:,f"{name} H2 Electrolysis"] * weights)
     # allowed_excess = float(policy.replace("monthly","").replace("p","."))
     allowed_excess = 1
-    load = electrolysis.groupby("snapshot.month").sum() * -allowed_excess
-    lhs = res + load
+    load =  electrolysis.groupby("snapshot.month").sum()
+    lhs = res - load
 
     n.model.add_constraints(lhs == 0, name="RES_monthly_matching")
 
@@ -273,7 +273,10 @@ def solve(policy, n):
 
     fn = getattr(snakemake.log, 'memory', None)
 
-    linearized_uc = True if any(n.links.committable) else False
+    linearized_uc = snakemake.config["global"]["linear_uc"]
+    
+    if linearized_uc:
+        logger.info("Adding linearised unit commitment.")
 
     solver_options = snakemake.config["solving"]["solver"]
     solver_name = solver_options["name"]
@@ -295,7 +298,8 @@ def solve(policy, n):
                 solver_name=solver_name,
                 solver_options=solver_options,
                 log_fn=snakemake.log.solver,
-                linearized_unit_commitment=linearized_uc)
+                linearized_unit_commitment=linearized_uc,
+                assign_all_duals=True)
 
 
 
@@ -309,10 +313,10 @@ if __name__ == "__main__":
     if 'snakemake' not in globals():
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('resolve_network',
-                                policy="exl1p2", palette='p1', zone='DE',
-                                year='2025',
+                                policy="ref", palette='p1', zone='DE',
+                                year='2030',
                                 res_share="p0",
-                                offtake_volume="3200",
+                                offtake_volume="6400",
                                 storage="flexibledemand")
 
     logging.basicConfig(filename=snakemake.log.python,
