@@ -7,7 +7,7 @@ Created on Wed Oct 12 16:32:11 2022
 """
 import pandas as pd
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
@@ -449,7 +449,7 @@ def plot_cf(df, wished_policies, wished_order, volume, name=""):
 
 def plot_consequential_emissions(emissions, supply_energy, wished_policies,
                                  wished_order, volume, name=""):
-    compare_p = "ref" # "ref" if snakemake.config["solving_option"]!="together" else "offgrid"
+    compare_p = "offgrid" # "ref" if snakemake.config["solving_option"]!="together" else "offgrid"
     # consequential emissions
     emissions = emissions[~emissions.index.duplicated()]
     wished = wished_policies + [compare_p] if compare_p not in wished_policies else wished_policies[:]
@@ -471,6 +471,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
                   else scen for scen in [compare_p]]
     emissions_v = emissions_v.groupby(level=[0,1]).first()
     emissions_v = emissions_v.reindex(wished_order, level=1)
+    
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
@@ -490,17 +491,26 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     y_max = 0
     emissions_s = emissions_s.groupby(level=[0,1], axis=1).first()
     emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
-    for i, policy in enumerate(nice_names):
-        # annually produced H2 in [t_H2/a]
-        produced_H2 = float(volume)*8760 / LHV_H2
-        em_p = emissions_s[policy].sub(emissions_s[compare_p[0]])/ produced_H2
+    # annually produced H2 in [t_H2/a]
+    produced_H2 = float(volume)*8760 / LHV_H2
+    em_p = emissions_s.sub(emissions_s[compare_p[0]], level=1, axis=1) / produced_H2
+    no_grid_e = em_p.drop("grid", axis=1, level=0, errors="ignore")
+    global_y_min = no_grid_e[no_grid_e<0].sum().min()
+    global_y_max = no_grid_e[no_grid_e>0].sum().max()
+    y_max = em_p[em_p>0].sum().max()
+    
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=False,
+                           figsize=(2*len(wished_policies),1.5))
+    
 
-        em_p.sum().rename("net total").plot(ax=ax[i], lw=0, marker="_", color="black",
+    for i, policy in enumerate(nice_names):
+        
+        em_p[policy].sum().rename("net total").plot(ax=ax[i], lw=0, marker="_",
+                                                    color="black",
                                             markersize=15, markeredgewidth=2)
         # em_p.sum().rename("net total").plot(ax=ax[i], kind="bar", color="black",
         #                                     width=0.25, position=-1)
-        em_p.T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
+        em_p[policy].T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
                             width=0.65, legend=False,
                             color=[snakemake.config['tech_colors'][i] for i in em_p.index])
         # import pyam
@@ -512,10 +522,27 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
         ax[i].set_xlabel("")
         ax[i].grid(alpha=0.3)
         ax[i].set_axisbelow(True)
-        if em_p[em_p<0].sum().min()<y_min: y_min = em_p[em_p<0].sum().min()
-        if em_p[em_p>0].sum().max()>y_max: y_max = em_p[em_p>0].sum().max()
-    ax[0].set_ylim([1.1*y_min, 1.1*y_max])
-    ax[0].set_ylabel("consequential emissions \n compared to reference \n [kg$_{CO_2}$/kg$_{H_2}$]")
+    
+    ticks = np.arange(np.floor(global_y_min / 5) * 5,
+                      np.ceil(y_max / 5) * 5 + 5, 5)
+    for i, policy in enumerate(nice_names): 
+        
+        if policy == "grid":
+            print(i, policy)
+            # common_yticks = ax[1].get_yticks()
+            # ax[i].set_yticks(common_yticks)
+            ax[i].set_ylim([1.1*global_y_min, 1.1*y_max])
+            ax[i].tick_params(axis='y', labelcolor='tab:red')
+            ax[i].set_yticks(ticks)
+        else:
+            common_yticks = ax[0].get_yticks()
+            ax[i].tick_params(axis='y', labelcolor='tab:blue')
+            ax[i].set_ylim([1.1*global_y_min, 1.1*global_y_max]) 
+        
+            ax[i].set_yticks(ticks[ticks<global_y_max])
+            ax[i].tick_params(axis='y') # , labelsize=8)
+            
+    ax[0].set_ylabel("consequential emissions \n compared to hourly \n [kg$_{CO_2}$/kg$_{H_2}$]")
     plt.legend(fontsize=9, bbox_to_anchor=(1,1))
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
                 bbox_inches="tight")
@@ -618,7 +645,7 @@ def plot_shadow_prices(weighted_prices, wished_policies, wished_order, volume,
     not_grd = w_price.index!=("grid", "nostore")
 
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
-                           sharey=True,figsize=(10,1.5))
+                           sharey=True,figsize=(len(wished_policies)*2,1.5))
     for i, policy in enumerate(nice_names):
         w_price.loc[policy].reindex(wished_order).plot(kind="bar", ax=ax[i],
                                                  title=policy, grid=True, width=0.65)
