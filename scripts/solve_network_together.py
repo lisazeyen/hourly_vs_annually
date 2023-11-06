@@ -7,7 +7,7 @@ from solve_network import (prepare_costs, palette, strip_network,
                            cost_parametrization, country_res_constraints,
                            average_every_nhours, add_unit_committment,
                            prepare_network, capacity_target_constraint,
-                           DE_targets)
+                           DE_targets,  biomass_generation_constraint)
 from resolve_network import (add_H2, add_dummies, res_constraints,
                              monthly_constraints, excess_constraints)
 
@@ -32,6 +32,8 @@ def solve_network(n, tech_palette):
 
         add_battery_constraints(n)
         country_res_constraints(n, snakemake)
+        biomass_generation_constraint(n, snakemake)
+        
 
         if "res" in policy:
             logger.info("setting annual RES target")
@@ -91,7 +93,7 @@ def solve_network(n, tech_palette):
     nhours = snakemake.config["scenario"]["temporal_resolution"]
     n = average_every_nhours(n, nhours)
     
-    n = prepare_network(n)
+    n = prepare_network(n, snakemake)
 
     result, message = n.optimize(
            extra_functionality=extra_functionality,
