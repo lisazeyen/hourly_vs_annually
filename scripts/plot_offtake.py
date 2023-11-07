@@ -502,6 +502,9 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=False,
                            figsize=(2*len(wished_policies),1.5))
     
+    # Adjust subplot parameters to give specified padding
+    # fig.subplots_adjust(wspace=0.3) 
+    
 
     for i, policy in enumerate(nice_names):
         
@@ -523,6 +526,7 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
         ax[i].grid(alpha=0.3)
         ax[i].set_axisbelow(True)
     
+    plt.legend(fontsize=9, bbox_to_anchor=(1,1))
     ticks = np.arange(np.floor(global_y_min / 5) * 5,
                       np.ceil(y_max / 5) * 5 + 5, 5)
     for i, policy in enumerate(nice_names): 
@@ -535,15 +539,24 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
             ax[i].tick_params(axis='y', labelcolor='tab:red')
             ax[i].set_yticks(ticks)
         else:
+            if "grid" in nice_names:
+                pos1 = ax[i].get_position()
+                new_pos1 = [pos1.x0 + 0.05, pos1.y0, pos1.width, pos1.height]
+                ax[i].set_position(new_pos1)
             common_yticks = ax[0].get_yticks()
             ax[i].tick_params(axis='y', labelcolor='tab:blue')
             ax[i].set_ylim([1.1*global_y_min, 1.1*global_y_max]) 
-        
-            ax[i].set_yticks(ticks[ticks<global_y_max])
-            ax[i].tick_params(axis='y') # , labelsize=8)
+            
+            
+            ax[i].set_yticks(ticks[np.logical_and(global_y_min<ticks, ticks<global_y_max)])
+            if ("grid" in nice_names and i==1):   
+                ax[i].tick_params(axis='y') # , labelsize=8)
+            else:
+                ax[i].tick_params(axis='y', labelleft=False)
+                
             
     ax[0].set_ylabel("consequential emissions \n compared to hourly \n [kg$_{CO_2}$/kg$_{H_2}$]")
-    plt.legend(fontsize=9, bbox_to_anchor=(1,1))
+   
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
                 bbox_inches="tight")
 
