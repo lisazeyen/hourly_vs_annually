@@ -142,6 +142,18 @@ def plot_multiindex_df(df, name):
     ax.axhspan(ymin=ax.get_ylim()[0], ymax=0, xmin=0, xmax=4/ax.get_xlim()[1],
                color='lightgreen', alpha=0.3)
     
+    # Get the current limits
+    x_lim = ax.get_xlim()
+    y_lim = ax.get_ylim()
+    
+    # Calculate position for the text
+    x_pos = 3  # Halfway on the x-axis span that's colored green
+    y_pos = y_lim[0] + 1.5  # Halfway from the bottom of the y-axis to y=0
+    
+    # Add the text
+    ax.text(x_pos, y_pos, 'low emissions +\n low cost', color='green',
+            ha='center', va='center', alpha=0.5)
+        
     plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/summary_cost_emissions_{year}_{name}.pdf",
                 bbox_inches="tight")
         
@@ -149,9 +161,9 @@ def plot_multiindex_df(df, name):
 compare_p = "offgrid"
 emissions = {}
 h2_cost = {}
-year = 2025
 volume = "3200"
-country_dict = {"DE": "gas_price_35_nocrossover",
+country_dict = {"DE-2025": "gas_price_35_nocrossover",
+                "DE-2030": "gas_price_35_nocrossover",
                 "NL": "gas_price_35_nocrossover",
                 "PL": "gas_price_35_highersolver",
                 "CZ": "gas_price_35_highersolver",
@@ -159,8 +171,11 @@ country_dict = {"DE": "gas_price_35_nocrossover",
                 "ES": "gas_price_35_highersolver"}
 
 for ct, run_dir in country_dict.items(): 
-    path = f"/home/lisa/Documents/hourly_vs_annually/results/{run_dir}/csvs/{year}/{ct}/p1/"
-    res_share = str(snakemake.config[f"res_target_{year}"][ct])
+    year=2030 if ct == "DE-2030" else 2025
+    
+    ct_y = ct.split("-")[0]
+    path = f"/home/lisa/Documents/hourly_vs_annually/results/{run_dir}/csvs/{year}/{ct_y}/p1/"
+    res_share = str(snakemake.config[f"res_target_{year}"][ct_y])
     
     # emissions
     emissions_v = pd.read_csv(path + "emissions_together.csv",
