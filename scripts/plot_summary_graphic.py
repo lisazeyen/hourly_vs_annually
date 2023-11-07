@@ -101,8 +101,9 @@ def plot_multiindex_df(df, name):
         # Select data for each line
         data = df.loc[(country, policy, storage)]
         ax.plot(data['h2_cost'], data['emissions'], 
-                color=colors[ct], 
+                color=colors[country], 
                 marker=policy_markers[policy], 
+                markersize=8,
                 fillstyle=storage_marker_styles[storage],
                 linestyle="", # storage_styles[storage],
                 label=f"{country}, {policy}, {storage}")
@@ -110,7 +111,7 @@ def plot_multiindex_df(df, name):
     # Create legend handles for policies
     policy_handles = [mlines.Line2D([], [], color='black', marker=policy_markers[policy], linestyle='None',
                              markersize=10, label=rename_scenarios[policy])
-                      for policy in policies]
+                      for policy in wished_policies]
     # Create legend handles for storage types
     storage_handles = [mlines.Line2D([], [], color='gray', marker='v', linestyle='None',
                              markersize=10, fillstyle=storage_marker_styles[storage],
@@ -133,7 +134,14 @@ def plot_multiindex_df(df, name):
     # Set the labels for the axes
     ax.set_xlabel("cost \n [Euro/kg$_{H_2}$]")
     ax.set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
+    # Set grid
+    ax.yaxis.grid(True, linestyle='--', which='major', color='gray', alpha=0.7)
 
+    # color the background
+    # Highlight the specified area with light green
+    ax.axhspan(ymin=ax.get_ylim()[0], ymax=0, xmin=0, xmax=4/ax.get_xlim()[1],
+               color='lightgreen', alpha=0.3)
+    
     plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/summary_cost_emissions_{year}_{name}.pdf",
                 bbox_inches="tight")
         
