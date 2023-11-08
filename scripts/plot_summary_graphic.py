@@ -97,7 +97,7 @@ def plot_multiindex_df(df, name):
 
     
     # Plot each line
-    for (country, policy, storage), df in to_plot.groupby(level=[0, 1, 2]):
+    for (country, policy, storage) in df.index:
         # Select data for each line
         data = df.loc[(country, policy, storage)]
         ax.plot(data['h2_cost'], data['emissions'], 
@@ -156,14 +156,205 @@ def plot_multiindex_df(df, name):
         
     plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/summary_cost_emissions_{year}_{name}.pdf",
                 bbox_inches="tight")
+    
+    
+  
+import matplotlib.patches as mpatches
+from scipy.spatial import ConvexHull
+
+# New color dictionary for storage types
+storage_colors = {
+    'flexibledemand': 'green',
+    'mtank': 'orange',
+    'nostore': 'red'
+}
+
+# New marker dictionary for countries
+country_markers = {
+    "DE-2025": "p",
+    "DE-2030": "8",
+    "ES": "4",
+    "PT": "s",
+    "CZ": 'o',
+    "NL": '*',
+    "PL": "^",
+}
+
+policy_colors = {
+    'grd': 'red',  # Clear red color for "grid"
+    'offgrid': '#332288',  # Indigo shade
+    'monthly': '#117733',  # Dark green
+    'res1p0': '#DDCC77',  # Khaki
+    'res1p2': '#88CCEE',  # Sky blue
+    'res1p3': '#CC6677',  # Pinkish
+    "exl1p2": '#AA4499',  # Purple
+    "exl1p3": '#44AA99',  # Teal
+}
+
+
+# Update rename_scenarios with the full policy list
+rename_scenarios.update(policy_markers)
+
+
+from matplotlib.patches import Polygon
+
+def plot_multiindex_df_hull(dfs, name):
+    
+    cf = dfs.cf
+    df = dfs[["h2_cost", "emissions"]]
+    # Get unique values for countries, policies, and storage types
+    countries = df.index.get_level_values(0).unique()
+    policies = df.index.get_level_values(1).unique()
+    storages = df.index.get_level_values(2).unique()
+    
+    # Color map for countries
+    # Colorblind-friendly color palette
+    cb_palette = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', 
+                  '#984ea3', '#999999', '#e41a1c', '#dede00']
+    
+
+    # Initialize dictionary to hold policy points
+    policy_points = {policy: [] for policy in policies}
+
+
+
+    plots = ["all", "option1", "option2", "option3"]
+    opts_dict = {"all": "",
+                 "option1": "hourly matching with low cost storage",
+                 "option2": "capacity factors of electrolysis < 70%",
+                 "option3": "largely decarbonised background system (RES share >= 80%)"}
+    
+    for plot in plots:
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title(opts_dict[plot], fontsize=16, fontweight='bold')
+    
+        # Collect data points for each policy
+        for (country, policy, storage) in df.index:
+            # Select data for each line
+            data = df.loc[(country, policy, storage)]
+            cf_i = cf.loc[(country, policy, storage)]
+            point = (data['h2_cost'], data['emissions'])
+            policy_points[policy].append(point)
+            
+            # make some markers less transparent
+            option1 = (policy in ["exl1p2", "offgrid"]) and (storage in ["flexibledemand", "mtank"])
+            option2 = (cf_i<=0.7) and (policy!="grd")
+            option3 = (country in ["DE-2030"]) and (policy!="grd")
+            if plot=="all":
+                bool_o = option1 or option2 or option3
+            elif plot=="option1":
+                bool_o = option1
+            elif plot=="option2":
+                bool_o = option2
+            elif plot=="option3":
+                bool_o = option3
+                
+                
+            if bool_o:
+                alpha = 0.8
+                edge_color = 'black'
+                line_width = 1
+                z_order = 3
+            else:
+                alpha = 0.5
+                edge_color = 'none'
+                line_width = 0
+                z_order = 2
+    
+            # Plot each data point with its respective storage color and country marker
+            ax.scatter(data['h2_cost'], data['emissions'], 
+                color=storage_colors[storage], 
+                edgecolors=edge_color, 
+                linewidths=line_width,
+                marker=country_markers.get(country, 'o'), 
+                s=70,  # Marker size
+                alpha=alpha, 
+                zorder=z_order,
+                label=f"{country}, {policy}, {storage}")
+    
+        # Add background color for each policy using fill_between
+        for policy, points in policy_points.items():
+            if points:  # Check if there are any points for the policy
+                sorted_points = sorted(points)  # Sort points based on h2_cost (x-value)
+                x_values, y_values = zip(*sorted_points)
+                min_y = min(y_values)
+                max_y = max(y_values)
+                ax.fill_between(x_values, min_y-1, max_y+1,
+                                color=policy_colors[policy],
+                                alpha=0.2,
+                                step='mid')
+    
+    
+        
+        # ... [Rest of your plotting code to create and set legends, labels, grid]
+        # Set the labels for the axes
+        ax.set_xlabel("cost \n [Euro/kg$_{H_2}$]")
+        ax.set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
+        # Set grid
+        ax.yaxis.grid(True, linestyle='--', which='major', color='gray', alpha=0.7)
+        
+        # Create legend handles for policies using a patch for the convex hull color
+        rename_scenarios = {"res1p0": "annually", "exl1p0": "hourly", "offgrid": "hourly",
+                            "grd": "grid", "monthly": "monthly",
+                            "res1p2": "annually excess 20%", "exl1p2": "hourly excess 20%",
+                            "res1p3": "annually excess 30%", "exl1p3": "hourly excess 30%",}
+    
+        policy_handles = [mpatches.Patch(color=policy_colors[policy], label=rename_scenarios[policy], alpha=0.3)
+                          for policy in wished_policies]
+        
+        # Create legend handles for storage types using the new color scheme
+        storage_handles = [mlines.Line2D([], [], color=storage_colors[storage], marker='o', linestyle='None',
+                                          markersize=10, label=storage)
+                           for storage in storages]
+        
+        # Assuming country_markers is a dictionary like policy_markers, providing a specific marker for each country
+        # Create legend handles for countries
+        country_handles = [mlines.Line2D([], [], color='black', marker=country_markers[country], linestyle='None',
+                                          markersize=10, label=country)
+                           for country in countries]
+        
+        # Combine handles
+        handles = country_handles + policy_handles + storage_handles
+        
+        # Add legend to the plot
+        ax.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Set x-axis limit to 22
+        ax.set_xlim(left=0, right=22)  # Only set the upper bound to 22
+        
+        # Add a vertical dashed line at x=5 going up to y=0
+        ax.axvline(x=5, color='#404040', linestyle='--', linewidth=1) # ymin=ax.get_ylim()[0], ymax=0
+        
+        # Add a horizontal dashed line at y=0 going right until x=5
+        ax.axhline(y=0, color='#404040', linestyle='--', linewidth=1) # xmin=0, xmax=5/ax.get_xlim()[1],
+    
+        # Add text above the x-axis between x=0 and x=5 saying "low cost"
+        ax.text(2.5, ax.get_ylim()[0], 'low cost', # x=2.5 centers the text between 0 and 5
+                ha='center', # horizontal alignment is center
+                va='bottom', # vertical alignment is bottom
+                fontsize=10)
+        
+        # Add vertical text parallel to the y-axis saying "low emissions" below y<0
+        ax.text( 0.1, ax.get_ylim()[0]/10, 'low emissions', # y=-5 places the text below y=0
+                rotation='vertical', # rotate the text vertically
+                ha='left', # horizontal alignment is left
+                va='top', # vertical alignment is top (since it's rotated, "top" will be towards the x-axis)
+                fontsize=10)
+    
+    
+        plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/summary_cost_emissions_{year}_{name}_hull_{plot}.pdf",
+                    bbox_inches="tight")
+
         
 #%%
 compare_p = "offgrid"
 emissions = {}
 h2_cost = {}
+cf = {}
 volume = "3200"
 country_dict = {"DE-2025": "gas_price_35_nocrossover",
-                "DE-2030": "gas_price_35_nocrossover",
+                "DE-2030": "DE_NL",
                 "NL": "gas_price_35_nocrossover",
                 "PL": "gas_price_35_highersolver",
                 "CZ": "gas_price_35_highersolver",
@@ -193,14 +384,22 @@ for ct, run_dir in country_dict.items():
     # convert EUR/MWh_H2 in Eur/kg_H2
     singlecost = singlecost / 1e3 * LHV_H2
     h2_cost[ct] = singlecost
+    
+    
+    # capacity factor
+    cf[ct] = pd.read_csv(path + "cf_together.csv",
+                                    index_col=[0,1,2,3]).xs((float(res_share), float(volume)),
+                                                         level=[1,2])
 #%%
 emissions_all = pd.concat(emissions, axis=1).droplevel(1, axis=1)
 h2_cost_all = pd.concat(h2_cost, axis=1)
+cf_all = pd.concat(cf, axis=1).droplevel(1, axis=1).unstack(level=0).unstack()
 
 summed_cost = h2_cost_all.sum()
 em = emissions_all.unstack(level=0).unstack()
-tot = pd.concat([summed_cost, em], axis=1)
-tot.columns = ["h2_cost", "emissions"]
+# tot = pd.concat([summed_cost, em], axis=1)
+tot = pd.concat([summed_cost, em, cf_all], axis=1)
+tot.columns = ["h2_cost", "emissions", "cf"]
 #%%
 plot_scenarios = {"":["grd", "res1p0", "offgrid","exl1p2"],
                   "_no_grid":["res1p0", "monthly", "offgrid","exl1p2"],
@@ -223,5 +422,5 @@ for name, wished_policies in plot_scenarios.items():
     
     
     # Assuming your dataframe is named 'to_plot'
-    plot_multiindex_df(to_plot, name)
+    plot_multiindex_df_hull(to_plot, name)
 
