@@ -346,12 +346,106 @@ def plot_multiindex_df_hull(dfs, name):
         plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/summary_cost_emissions_{year}_{name}_hull_{plot}.pdf",
                     bbox_inches="tight")
 
+
+def plot_share_wind_solar(df, policy = "ref", plot_type="background"):
+    
+    countries = df.index.get_level_values(0).unique()
+    final = {}
+    wished_stores = ["flexibledemand", "nostore"]
+    
+    for ct in countries:
+        if plot_type!="CI":
+            index = (df.index.get_level_values(0)==ct) & (df.index.get_level_values(1)!="CI")
+        else:
+            index = (df.index.get_level_values(0)==ct) & (df.index.get_level_values(1)=="CI")
+            
+        balance = df.loc[index].droplevel(0).droplevel(0)
+        
+        wind_i = balance.index.str.contains("wind")
+        wind_gen = balance.loc[wind_i].sum()
+        balance.drop(balance.index[wind_i], inplace=True)
+        balance.loc["wind"] = wind_gen
+        to_plot = (balance.rename(index=lambda x: 
+                                  x.replace("0","").replace("1",""))
+                   ).groupby(level=0).sum()[policy]
+        if plot_type!="CI":
+            to_plot = abs(round(to_plot.div(to_plot.loc["electricity"])*100, ndigits=2
+                            )).loc[["solar", "wind"]][wished_stores]
+        else:
+            to_plot = round(to_plot.loc[["solar", "wind"]]
+                            /to_plot.loc[["solar", "wind"]].sum()*100,
+                            ndigits=2)[wished_stores]
+        emission = em.loc[(ct, policy)][wished_stores]
+    
+        final[ct] = pd.concat([emission.rename("emission"),
+                              to_plot.T], axis=1)
+    
+    final = pd.concat(final)
+    
+    from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+    
+#%%
+    # Create the figure and a set of subplots
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+    
+    # Define a colormap that will be shared by both subplots
+    cmap = LinearSegmentedColormap.from_list(
+        name='red_green_colormap',
+        colors=['green', 'red']
+    )
+    
+    # Find global min and max for emission to normalize across both subplots
+    global_min = final['emission'].min()
+    global_max = max(0, final['emission'].max())+0.1
+    norm = TwoSlopeNorm(vmin=global_min, vcenter=0, vmax=global_max)
+    
+    # Loop through each storage type and create a subplot for each
+    for i, store in enumerate(['flexibledemand', 'nostore']):
+        cor = final.xs(store, level=1)
+        
+        # Create the scatter plot on the ith axes
+        sc = axes[i].scatter(cor['solar'], cor['wind'], c=cor['emission'],
+                             cmap="RdYlGn_r", norm=norm, s=250)
+    
+        # Annotate each point with its country code
+        for country, row in cor.iterrows():
+            axes[i].annotate(country, (row['solar'], row['wind']))
+    
+        # Labeling the axes
+        axes[i].set_xlabel('share solar generation \n [%]')
+        if i == 0:  # Only add y label to the first subplot
+            axes[i].set_ylabel('share wind generation \n [%]')
+        
+        # Adding a title
+        axes[i].set_title(store)
+        
+        axes[i].grid(True)
+        
+        if plot_type!="CI":
+            axes[i].set_xlim([0, 50])
+            axes[i].set_ylim([0, 50])
+        else:
+            axes[i].set_xlim([0, 100])
+            axes[i].set_ylim([0, 100])
+    # Adjust layout for tight fit
+    plt.tight_layout()
+    
+    # Create a color bar on the right side of the subplots
+    cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), pad=0.02)
+    cbar.set_label("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
+    
+    # Show the figure
+    plt.savefig(f"/home/lisa/Documents/hourly_vs_annually/results/share_wind_solar_{plot_type}_{policy}.pdf",
+                bbox_inches="tight")
+
         
 #%%
 compare_p = "offgrid"
 emissions = {}
 h2_cost = {}
 cf = {}
+nodal_supply = {}
+
 volume = "3200"
 country_dict = {"DE-2025": "gas_price_35_nocrossover",
                 "DE-2030": "DE_NL",
@@ -390,6 +484,13 @@ for ct, run_dir in country_dict.items():
     cf[ct] = pd.read_csv(path + "cf_together.csv",
                                     index_col=[0,1,2,3]).xs((float(res_share), float(volume)),
                                                          level=[1,2])
+                                                            
+    # nodal supply
+    nodal_supply[ct] =  pd.read_csv(path + "nodal_supply_together.csv",
+                                    index_col=[0,1,2,3], header=[0,1,2,3]
+                                    ).xs((res_share, volume),
+                                                         level=[1,2], axis=1).loc["AC"].droplevel(0).loc[[ct_y, "CI"]]
+    
 #%%
 emissions_all = pd.concat(emissions, axis=1).droplevel(1, axis=1)
 h2_cost_all = pd.concat(h2_cost, axis=1)

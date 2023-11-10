@@ -12,7 +12,7 @@ n_2030: 'input/elec_s_37_lv1.0__1H-B-solar+p3_2030.nc'
 ###################
 # Scenario controls
 
-run: 'gas_price_35_nocrossover'
+run: 'gas_price_35_highersolver'
 
 #wildcards
 scenario:
@@ -23,7 +23,7 @@ scenario:
   # exl: like cfe100 but excess limited to 20%
   palette: [ "p1", # onwind + solar + battery
             ]
-  zone: [ "DE", "NL", "PL", # "ES", "PT", "CZ", "PL"
+  zone: [ "DE", "NL", "PL", "ES", "PT", "CZ",
         ]
   year: ['2025', '2030'] # controls both the brownfield fleet and tech costs projection
   res_share: [p0] #, p01, p10, p20, p30, p35, p40, p45, p50, p55, p60, p70, p80, p90, 1p0]  # [EUR/kg_H2] fixed offtake price of H2
@@ -186,7 +186,7 @@ solving:
     method: 2 # barrier
     crossover: 0
     # NumericFocus: 3       # Favour numeric stability over speed
-    BarConvTol: 1.e-8
+    BarConvTol: 1.e-9
     # FeasibilityTol: 1.e-6
     # OptimalityTol: 1.e-6
     Seed: 123

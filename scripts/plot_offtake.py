@@ -16,7 +16,7 @@ if __name__ == "__main__":
         os.chdir("/home/lisa/mnt/hourly_vs_annually/scripts")
         from _helpers import mock_snakemake
         snakemake = mock_snakemake('plot_offtake', palette='p1',
-                                   zone='DE', year='2025',  participation='10',
+                                   zone='CZ', year='2025',  participation='10',
                                    policy="ref")
         os.chdir("/home/lisa/mnt/")
 
@@ -56,6 +56,7 @@ def plot_series(network,label, carrier="AC"):
 
     buses = n.buses.index[n.buses.carrier.str.contains(carrier)]
     buses = [f"{name}"]
+    # buses = ["CI H2"]
 
     supply = pd.DataFrame(index=n.snapshots)
     for c in n.iterate_components(n.branch_components):
@@ -109,7 +110,8 @@ def plot_series(network,label, carrier="AC"):
     supply = supply / 1e3
 
     supply.rename(columns={"electricity": "electric demand",
-                           "heat": "heat demand"},
+                           "heat": "heat demand", 
+                           "CI H2": "H2 demand"},
                   inplace=True)
     supply.columns = supply.columns.str.replace("residential ", "")
     supply.columns = supply.columns.str.replace("services ", "")
@@ -130,22 +132,28 @@ def plot_series(network,label, carrier="AC"):
     snakemake.config["tech_colors"]["PHS charging"] = snakemake.config["tech_colors"]["PHS"]
     snakemake.config["tech_colors"]["electric demand"] = snakemake.config["tech_colors"]["AC"]
     snakemake.config["tech_colors"]["offtake H2"] = "#FFC0CB"
+    snakemake.config["tech_colors"]["H2 demand"] = "#FFC0CB"
+    snakemake.config["tech_colors"]["AC"] = snakemake.config["tech_colors"]["electricity"]
+    snakemake.config["tech_colors"]["DC"] = snakemake.config["tech_colors"]["electricity"]
     supply.rename(index=lambda x: x.replace(year = int(year)),
                   inplace=True)
 
 
-    starts = [f"{year}-03-01", f"{year}-12-21"]
-    stops = [f"{year}-03-08", f"{year}-12-28"]
+    starts = [f"{year}-03-01", f"{year}-06-15"]
+    stops = [f"{year}-03-14", f"{year}-06-22"]
+    
+    starts = [f"{year}-03-14"]
+    stops = [ f"{year}-03-16"]
 
     for i, start in enumerate(starts):
         stop = stops[i]
         fig, ax = plt.subplots()
         fig.set_size_inches((8, 5))
 
-        (supply.loc[start:stop, new_columns]
+        (supply.loc[start:stop, : ] # new_columns]
          .plot(ax=ax, kind="area", stacked=True, linewidth=0.,
                color=[snakemake.config['tech_colors'][i.replace(suffix, "")]
-                      for i in new_columns]))
+                      for i in supply.columns]))
 
         handles, labels = ax.get_legend_handles_labels()
 
@@ -174,6 +182,50 @@ def plot_series(network,label, carrier="AC"):
             label.to_list()[0][1],label.to_list()[0][2],
             label.to_list()[0][3],  start, stop, year),
             transparent=True)
+        
+        # new plot
+        start = f"{year}-01-01"
+        stop = f"{year}-12-31"
+        new_columns = ['electrolysis', 'H2 store', 'H2 demand',
+                       'H2 Store charging']
+        # new_columns = ['electrolysis', 'H2 store',
+        #                'H2 Store charging']
+        
+        fig, ax = plt.subplots()
+        fig.set_size_inches((8, 4))
+
+        (supply.loc[:, new_columns]
+         .plot(ax=ax, kind="area", stacked=True, linewidth=0.,
+               color=[snakemake.config['tech_colors'][i.replace(suffix, "")]
+                      for i in new_columns]))
+        # abs(supply["H2 demand"]).plot(ax=ax, lw=3, color="black")
+
+        handles, labels = ax.get_legend_handles_labels()
+
+        handles.reverse()
+        labels.reverse()
+
+        new_handles = []
+        new_labels = []
+
+        for i, item in enumerate(labels):
+            if "charging" not in item:
+                new_handles.append(handles[i])
+                new_labels.append(labels[i])
+
+        ax.legend(new_handles, new_labels, ncol=3, loc="upper left", frameon=False)
+        ax.set_xlim([start, stop])
+        ax.set_ylim([-5, 6])
+        ax.grid(True)
+        ax.set_ylabel("Energy [GWh]")
+        fig.tight_layout()
+        
+        fig.savefig(snakemake.output.cf_plot.split("graphs/")[0] +
+                                                   "series-DE-res1p0-nostore-H2-{}-{}-{}.png".format(
+            
+         start, stop, year),
+            transparent=True)
+        
 
 
 def plot_nodal_balances(nodal_supply_energy):
@@ -472,7 +524,8 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     emissions_v = emissions_v.groupby(level=[0,1]).first()
     emissions_v = emissions_v.reindex(wished_order, level=1)
     
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,
+                           figsize=(2*len(wished_policies),1.5))
     for i, policy in enumerate(nice_names):
         # annually produced H2 in [t_H2/a]
         produced_H2 = float(volume)*8760 / LHV_H2
@@ -486,79 +539,109 @@ def plot_consequential_emissions(emissions, supply_energy, wished_policies,
     ax[0].set_ylabel("consequential emissions \n [kg$_{CO_2}$/kg$_{H_2}$]")
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_{volume}{name}.pdf",
                 bbox_inches="tight")
-
+    
     y_min = 0
     y_max = 0
     emissions_s = emissions_s.groupby(level=[0,1], axis=1).first()
     emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
-    # annually produced H2 in [t_H2/a]
-    produced_H2 = float(volume)*8760 / LHV_H2
-    em_p = emissions_s.sub(emissions_s[compare_p[0]], level=1, axis=1) / produced_H2
-    no_grid_e = em_p.drop("grid", axis=1, level=0, errors="ignore")
-    global_y_min = no_grid_e[no_grid_e<0].sum().min()
-    global_y_max = no_grid_e[no_grid_e>0].sum().max()
-    y_max = em_p[em_p>0].sum().max()
-    
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=False,
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,
                            figsize=(2*len(wished_policies),1.5))
-    
-    # Adjust subplot parameters to give specified padding
-    # fig.subplots_adjust(wspace=0.3) 
-    
-
     for i, policy in enumerate(nice_names):
-        
-        em_p[policy].sum().rename("net total").plot(ax=ax[i], lw=0, marker="_",
-                                                    color="black",
+        # annually produced H2 in [t_H2/a]
+        produced_H2 = float(volume)*8760 / LHV_H2
+        em_p = emissions_s[policy].sub(emissions_s[compare_p[0]])/ produced_H2
+
+        em_p.sum().rename("net total").plot(ax=ax[i], lw=0, marker="_", color="black",
                                             markersize=15, markeredgewidth=2)
-        # em_p.sum().rename("net total").plot(ax=ax[i], kind="bar", color="black",
-        #                                     width=0.25, position=-1)
-        em_p[policy].T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
+
+        em_p.T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
                             width=0.65, legend=False,
                             color=[snakemake.config['tech_colors'][i] for i in em_p.index])
-        # import pyam
-
-        # from pyam.plotting import add_net_values_to_bar_plot
-        # add_net_values_to_bar_plot(ax[i], color='k')
-        # # fig.subplots_adjust(right=0.55)
-
+        ax[i].set_title(policy, fontsize=10)
         ax[i].set_xlabel("")
         ax[i].grid(alpha=0.3)
         ax[i].set_axisbelow(True)
-    
+        if em_p[em_p<0].sum().min()<y_min: y_min = em_p[em_p<0].sum().min()
+        if em_p[em_p>0].sum().max()>y_max: y_max = em_p[em_p>0].sum().max()
+    ax[0].set_ylim([1.1*y_min, 1.1*y_max])
+    ax[0].set_ylabel("consequential emissions \n compared to reference \n [kg$_{CO_2}$/kg$_{H_2}$]")
     plt.legend(fontsize=9, bbox_to_anchor=(1,1))
-    ticks = np.arange(np.floor(global_y_min / 5) * 5,
-                      np.ceil(y_max / 5) * 5 + 5, 5)
-    for i, policy in enumerate(nice_names): 
-        
-        if policy == "grid":
-            print(i, policy)
-            # common_yticks = ax[1].get_yticks()
-            # ax[i].set_yticks(common_yticks)
-            ax[i].set_ylim([1.1*global_y_min, 1.1*y_max])
-            ax[i].tick_params(axis='y', labelcolor='tab:red')
-            ax[i].set_yticks(ticks)
-        else:
-            if "grid" in nice_names:
-                pos1 = ax[i].get_position()
-                new_pos1 = [pos1.x0 + 0.05, pos1.y0, pos1.width, pos1.height]
-                ax[i].set_position(new_pos1)
-            common_yticks = ax[0].get_yticks()
-            ax[i].tick_params(axis='y', labelcolor='tab:blue')
-            ax[i].set_ylim([1.1*global_y_min, 1.1*global_y_max]) 
-            
-            
-            ax[i].set_yticks(ticks[np.logical_and(global_y_min<ticks, ticks<global_y_max)])
-            if ("grid" in nice_names and i==1):   
-                ax[i].tick_params(axis='y') # , labelsize=8)
-            else:
-                ax[i].tick_params(axis='y', labelleft=False)
-                
-            
-    ax[0].set_ylabel("consequential emissions \n compared to hourly \n [kg$_{CO_2}$/kg$_{H_2}$]")
-   
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
                 bbox_inches="tight")
+    
+    # new plots
+    # y_min = 0
+    # y_max = 0
+    # emissions_s = emissions_s.groupby(level=[0,1], axis=1).first()
+    # emissions_s = emissions_s.reindex(wished_order, level=1, axis=1)
+    # # annually produced H2 in [t_H2/a]
+    # produced_H2 = float(volume)*8760 / LHV_H2
+    # em_p = emissions_s.sub(emissions_s[compare_p[0]], level=1, axis=1) / produced_H2
+    # no_grid_e = em_p.drop("grid", axis=1, level=0, errors="ignore")
+    # global_y_min = no_grid_e[no_grid_e<0].sum().min()
+    # global_y_max = no_grid_e[no_grid_e>0].sum().max()
+    # y_max = em_p[em_p>0].sum().max()
+    
+    # fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=False,
+    #                        figsize=(2*len(wished_policies),1.5))
+    
+    # # Adjust subplot parameters to give specified padding
+    # # fig.subplots_adjust(wspace=0.3) 
+    
+
+    # for i, policy in enumerate(nice_names):
+        
+    #     em_p[policy].sum().rename("net total").plot(ax=ax[i], lw=0, marker="_",
+    #                                                 color="black",
+    #                                         markersize=15, markeredgewidth=2)
+    #     # em_p.sum().rename("net total").plot(ax=ax[i], kind="bar", color="black",
+    #     #                                     width=0.25, position=-1)
+    #     em_p[policy].T.plot(kind="bar", stacked=True, grid=True, ax=ax[i], title=policy,
+    #                         width=0.65, legend=False,
+    #                         color=[snakemake.config['tech_colors'][i] for i in em_p.index])
+    #     # import pyam
+
+    #     # from pyam.plotting import add_net_values_to_bar_plot
+    #     # add_net_values_to_bar_plot(ax[i], color='k')
+    #     # # fig.subplots_adjust(right=0.55)
+
+    #     ax[i].set_xlabel("")
+    #     ax[i].grid(alpha=0.3)
+    #     ax[i].set_axisbelow(True)
+    
+    # plt.legend(fontsize=9, bbox_to_anchor=(1,1))
+    # ticks = np.arange(np.floor(global_y_min / 5) * 5,
+    #                   np.ceil(y_max / 5) * 5 + 5, 5)
+    # for i, policy in enumerate(nice_names): 
+        
+    #     if policy == "grid":
+    #         print(i, policy)
+    #         # common_yticks = ax[1].get_yticks()
+    #         # ax[i].set_yticks(common_yticks)
+    #         ax[i].set_ylim([1.1*global_y_min, 1.1*y_max])
+    #         ax[i].tick_params(axis='y', labelcolor='tab:red')
+    #         ax[i].set_yticks(ticks)
+    #     else:
+    #         if "grid" in nice_names:
+    #             pos1 = ax[i].get_position()
+    #             new_pos1 = [pos1.x0 + 0.05, pos1.y0, pos1.width, pos1.height]
+    #             ax[i].set_position(new_pos1)
+    #         common_yticks = ax[0].get_yticks()
+    #         ax[i].tick_params(axis='y', labelcolor='tab:blue')
+    #         ax[i].set_ylim([1.1*global_y_min, 1.1*global_y_max]) 
+            
+            
+    #         ax[i].set_yticks(ticks[np.logical_and(global_y_min<ticks, ticks<global_y_max)])
+    #         if ("grid" in nice_names and i==1):   
+    #             ax[i].tick_params(axis='y') # , labelsize=8)
+    #         else:
+    #             ax[i].tick_params(axis='y', labelleft=False)
+                
+            
+    # ax[0].set_ylabel("consequential emissions \n compared to hourly \n [kg$_{CO_2}$/kg$_{H_2}$]")
+   
+    # fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0]+ f"consequential_emissions_by_carrier_{volume}{name}.pdf",
+    #             bbox_inches="tight")
 
 
 
@@ -628,7 +711,10 @@ def plot_cost_breakdown(h2_cost, wished_policies, wished_order, volume, name="")
     singlecost = singlecost.reindex(index=wished_tech_order)
 
 
-    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies), sharey=True,figsize=(10,1.5))
+    fig, ax = plt.subplots(nrows=1, ncols=len(wished_policies),
+                           # sharey=True,
+                           sharey=False,
+                           figsize=(10,1.5))
     for i, policy in enumerate(nice_names):
         singlecost.sum().loc[policy].rename("net total").plot(ax=ax[i], marker="_",
                                                               lw=0, color="black",
@@ -638,9 +724,27 @@ def plot_cost_breakdown(h2_cost, wished_policies, wished_order, volume, name="")
                  grid=True, legend=False,  width=0.65)
         ax[i].grid(alpha=0.3)
         ax[i].set_axisbelow(True)
-    not_grd = singlecost.columns!=(    'grid',        'nostore')
-    ax[0].set_ylim([singlecost[singlecost<0].sum().min()*1.1, singlecost[singlecost>0].sum().loc[not_grd].max()*1.1])
-    ax[0].set_ylabel("cost \n [Euro/kg$_{H_2}$]")
+        if i == 0:
+            # Custom y-axis limits for the first subplot
+            ax[i].set_ylim([singlecost[singlecost<0].sum().min()*1.1,
+                            singlecost[singlecost>0].sum().max()*1.1])
+            ax[i].set_ylabel("cost \n [Euro/kg$_{H_2}$]")
+        else:
+            not_grd = singlecost.columns!=(    'grid',        'nostore')
+            ax[i].set_ylim([singlecost[singlecost<0].sum().min()*1.1,
+                            singlecost[singlecost>0].sum().loc[not_grd].max()*1.1
+                            # singlecost[singlecost>0].sum().max()*1.1
+                            ])
+            if "grid" in nice_names:
+                pos1 = ax[i].get_position()
+                new_pos1 = [pos1.x0 + 0.05, pos1.y0, pos1.width, pos1.height]
+                ax[i].set_position(new_pos1)
+                
+                if ("grid" in nice_names and i==1):   
+                    ax[i].tick_params(axis='y') # , labelsize=8)
+                else:
+                    ax[i].tick_params(axis='y', labelleft=False)
+
     plt.legend(bbox_to_anchor=(1,1))
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"costbreakdown_{volume}{name}.pdf",
                 bbox_inches='tight')
@@ -984,6 +1088,7 @@ for volume in res.columns.levels[2]:
         ax[i].set_axisbelow(True)
     ax[0].set_ylabel("energy capacity \n [GWh]")
     plt.legend(bbox_to_anchor=(1,1))
+    plt.ylim([0, 1.1*(caps.max().max()/1e3)])
     fig.savefig(snakemake.output.cf_plot.split("cf_ele")[0] + f"capacities_price_{volume}volume.pdf",
                 bbox_inches='tight')
 
